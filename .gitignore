@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.streamlit/
+.demo_logs/
+.demo_state/
+.tmp*/
+*.log
+data/*.db
+data/*.jsonl
+data/index.json
+.vscode/
+.idea/

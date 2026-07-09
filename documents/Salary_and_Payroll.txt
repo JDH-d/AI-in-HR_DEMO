@@ -1,0 +1,335 @@
+PACIFIC BEACON SOFTWARE, INC.
+
+COMPENSATION AND PAYROLL OPERATIONS REFERENCE
+
+Document Owner: Finance Shared Services
+Effective Date: March 1, 2026
+Review Cadence: Annual review or earlier if law, process, or business operations materially change.
+Applies To: Finance, People Operations, and managers submitting pay-affecting changes.
+Purpose: Serve as an operational companion to the employee payroll handbook by documenting approval gates, compensation change timing, and common payroll processing scenarios.
+Audience Note: Internal payroll operations reference rather than employee brochure text.
+Related Documents: Payroll_FAQ.md, Benefits_Enrollment_Guide.md, PTO_Policy.md
+
+Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
+in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B
+workflow software and uses a standard support model across People Operations, Finance, Security, and
+a centralized IT Service Desk.
+
+This document is part of the internal demo knowledge base and is written to resemble a real handbook
+or operating guide that employees and managers could reference in a California company.
+
+How to Use This Document
+
+Use this document as the primary written guidance for compensation and payroll operations reference.
+Employees should read it for baseline expectations, while managers and support functions should use
+it as the shared reference point before creating one-off exceptions.
+
+When a situation touches other company processes, reviewers should also consult Payroll_FAQ.md,
+Benefits_Enrollment_Guide.md, PTO_Policy.md so decisions stay aligned across payroll, scheduling,
+access, onboarding, or benefits workflows.
+
+Roles and Responsibilities
+
+Employees are responsible for raising requests early when possible, keeping information accurate,
+and using the designated workflow or service channel instead of relying solely on informal chat or
+private messages.
+
+Managers are responsible for making timely, documented decisions, explaining operational constraints
+clearly, and partnering with Finance Shared Services whenever a case becomes sensitive, unusual, or
+legally significant.
+
+* Use the system of record for approvals, changes, and final status whenever one exists.
+* Escalate early when policy interpretation, sensitive data, or employee-relations risk is
+  involved.
+* Keep explanations factual, professional, and specific enough to audit later.
+* Avoid local side deals or verbal exceptions that contradict the written standard.
+
+Compensation Governance and Source of Truth
+
+Pacific Beacon treats compensation controls and record ownership as a normal operating topic that
+deserves explicit written guidance rather than informal habit. Compensation controls and record
+ownership affects employee trust, business continuity, and the quality of later decisions. This
+section explains how the company expects the topic to work in normal day-to-day operations.
+
+Employees are expected to treat offer letters, approvals, HRIS records, and payroll entries as
+connected records. That expectation is intentionally practical: the company wants employees to know
+what good participation looks like before an issue becomes urgent or emotional. Operationally, the
+company prefers a documented workflow and a visible decision trail over personal arrangements that
+only one manager remembers later.
+
+California context matters here because California wage timing sensitivity makes sloppy late changes
+especially risky. For that reason, local custom or a quick verbal answer is not considered a
+substitute for the actual workflow, the official system of record, or the responsible owner.
+
+Managers and support teams should validate effective dates, approvals, and pay elements before
+processing. The written process exists so similar situations get similar answers across departments,
+even when staffing, deadlines, or personalities vary. The collaboration expectation is that
+employees raise needs clearly, managers explain constraints specifically, and support teams document
+exceptions rather than guessing.
+
+A typical operating example is this: a manager promises an increase immediately but payroll waits
+for the approved workflow and system update. That example illustrates why the company documents the
+topic carefully: when time pressure rises, teams still need a predictable way to respond without
+relying on guesswork, side messages, or memory.
+
+* Employees should treat offer letters, approvals, HRIS records, and payroll entries as connected
+  records.
+* Managers and support teams should validate effective dates, approvals, and pay elements before
+  processing.
+* Escalate situations where California wage timing sensitivity makes sloppy late changes
+  especially risky.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Payroll Input Deadlines and Operational Cutoffs
+
+Pacific Beacon treats published close calendars and upstream dependencies as a normal operating
+topic that deserves explicit written guidance rather than informal habit. Published close calendars
+and upstream dependencies affects employee trust, business continuity, and the quality of later
+decisions. The goal of this section is to reduce ambiguity so employees and managers can make the
+same decision from the same written standard.
+
+Employees are expected to submit timekeeping approvals, bonus files, and employment changes before
+internal cutoffs. That expectation is intentionally practical: the company wants employees to know
+what good participation looks like before an issue becomes urgent or emotional. From an operating
+standpoint, the process is designed to be repeatable across departments so outcomes do not depend on
+personality or team habit.
+
+California context matters here because final-pay events and premium-pay corrections may justify
+exception handling when legally time sensitive. For that reason, local custom or a quick verbal
+answer is not considered a substitute for the actual workflow, the official system of record, or the
+responsible owner.
+
+Managers and support teams should communicate upstream changes before payroll close instead of
+treating payroll as a rescue team. The written process exists so similar situations get similar
+answers across departments, even when staffing, deadlines, or personalities vary. Good outcomes
+depend on the employee, manager, and support function sharing the same facts at the same time
+instead of correcting the story after the decision was made.
+
+A typical operating example is this: a promotion approved after salary close waits for the next run
+while a time-sensitive final-pay item jumps the queue. That example illustrates why the company
+documents the topic carefully: when time pressure rises, teams still need a predictable way to
+respond without relying on guesswork, side messages, or memory.
+
+* Employees should submit timekeeping approvals, bonus files, and employment changes before
+  internal cutoffs.
+* Managers and support teams should communicate upstream changes before payroll close instead of
+  treating payroll as a rescue team.
+* Escalate situations where final-pay events and premium-pay corrections may justify exception
+  handling when legally time sensitive.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Off-Cycle Payroll and Supplemental Payments
+
+Pacific Beacon treats supplemental payroll as a limited exception path as a normal operating topic
+that deserves explicit written guidance rather than informal habit. Supplemental payroll as a
+limited exception path affects employee trust, business continuity, and the quality of later
+decisions. In practice, this topic matters because unclear guidance usually creates avoidable
+rework, escalation, or employee frustration.
+
+Employees are expected to request off-cycle handling only when the business and legal facts justify
+it. That expectation is intentionally practical: the company wants employees to know what good
+participation looks like before an issue becomes urgent or emotional. The company uses structured
+approvals and service channels here because small inconsistencies often turn into payroll, access,
+or employee-relations issues later.
+
+California context matters here because California wage timing issues are one of the clearest
+reasons a supplemental run may be necessary. For that reason, local custom or a quick verbal answer
+is not considered a substitute for the actual workflow, the official system of record, or the
+responsible owner.
+
+Managers and support teams should document the root cause and approving authority for each
+exception. The written process exists so similar situations get similar answers across departments,
+even when staffing, deadlines, or personalities vary. This topic works best when teams communicate
+early, document the result, and avoid side-channel decisions that are impossible to audit later.
+
+A typical operating example is this: a missed commission file may or may not justify an off-cycle
+run depending on timing and employee impact. That example illustrates why the company documents the
+topic carefully: when time pressure rises, teams still need a predictable way to respond without
+relying on guesswork, side messages, or memory.
+
+* Employees should request off-cycle handling only when the business and legal facts justify it.
+* Managers and support teams should document the root cause and approving authority for each
+  exception.
+* Escalate situations where California wage timing issues are one of the clearest reasons a
+  supplemental run may be necessary.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Benefits, Leave, and Timekeeping Intersections
+
+Pacific Beacon treats cross-functional issues that span multiple systems as a normal operating topic
+that deserves explicit written guidance rather than informal habit. Cross-functional issues that
+span multiple systems affects employee trust, business continuity, and the quality of later
+decisions. This section explains how the company expects the topic to work in normal day-to-day
+operations.
+
+Employees are expected to identify the system of origin before trying to fix a problem at the
+payment layer. That expectation is intentionally practical: the company wants employees to know what
+good participation looks like before an issue becomes urgent or emotional. Operationally, the
+company prefers a documented workflow and a visible decision trail over personal arrangements that
+only one manager remembers later.
+
+California context matters here because state-specific paid sick leave, reimbursement expectations,
+and wage statement detail make generic shortcuts unsafe. For that reason, local custom or a quick
+verbal answer is not considered a substitute for the actual workflow, the official system of record,
+or the responsible owner.
+
+Managers and support teams should align the factual sequence across payroll, People Operations, and
+the manager before communicating the answer. The written process exists so similar situations get
+similar answers across departments, even when staffing, deadlines, or personalities vary. The
+collaboration expectation is that employees raise needs clearly, managers explain constraints
+specifically, and support teams document exceptions rather than guessing.
+
+A typical operating example is this: an employee sick leave bank looks right but the payslip is
+wrong, so payroll checks the leave feed first. That example illustrates why the company documents
+the topic carefully: when time pressure rises, teams still need a predictable way to respond without
+relying on guesswork, side messages, or memory.
+
+* Employees should identify the system of origin before trying to fix a problem at the payment
+  layer.
+* Managers and support teams should align the factual sequence across payroll, People Operations,
+  and the manager before communicating the answer.
+* Escalate situations where state-specific paid sick leave, reimbursement expectations, and wage
+  statement detail make generic shortcuts unsafe.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Auditability and Record Retention
+
+Pacific Beacon treats the ability to reconstruct what happened later as a normal operating topic
+that deserves explicit written guidance rather than informal habit. The ability to reconstruct what
+happened later affects employee trust, business continuity, and the quality of later decisions. The
+goal of this section is to reduce ambiguity so employees and managers can make the same decision
+from the same written standard.
+
+Employees are expected to keep approval references, change logs, and resolution notes tied to the
+actual transaction. That expectation is intentionally practical: the company wants employees to know
+what good participation looks like before an issue becomes urgent or emotional. From an operating
+standpoint, the process is designed to be repeatable across departments so outcomes do not depend on
+personality or team habit.
+
+California context matters here because California disputes often turn on documentation quality, not
+just verbal recollection. For that reason, local custom or a quick verbal answer is not considered a
+substitute for the actual workflow, the official system of record, or the responsible owner.
+
+Managers and support teams should keep notes factual and close the loop with the employee once the
+correction is processed. The written process exists so similar situations get similar answers across
+departments, even when staffing, deadlines, or personalities vary. Good outcomes depend on the
+employee, manager, and support function sharing the same facts at the same time instead of
+correcting the story after the decision was made.
+
+A typical operating example is this: a delayed bonus is explained directly rather than with a vague
+payroll is reviewing message. That example illustrates why the company documents the topic
+carefully: when time pressure rises, teams still need a predictable way to respond without relying
+on guesswork, side messages, or memory.
+
+* Employees should keep approval references, change logs, and resolution notes tied to the actual
+  transaction.
+* Managers and support teams should keep notes factual and close the loop with the employee once
+  the correction is processed.
+* Escalate situations where California disputes often turn on documentation quality, not just
+  verbal recollection.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Employee Communication and Ownership
+
+Pacific Beacon treats clear, respectful payroll communication as a normal operating topic that
+deserves explicit written guidance rather than informal habit. Clear, respectful payroll
+communication affects employee trust, business continuity, and the quality of later decisions. In
+practice, this topic matters because unclear guidance usually creates avoidable rework, escalation,
+or employee frustration.
+
+Employees are expected to submit tickets with dates, amounts, and the expected correction path. That
+expectation is intentionally practical: the company wants employees to know what good participation
+looks like before an issue becomes urgent or emotional. The company uses structured approvals and
+service channels here because small inconsistencies often turn into payroll, access, or
+employee-relations issues later.
+
+California context matters here because pay questions are trust-sensitive and need visible ownership
+rather than queue bouncing. For that reason, local custom or a quick verbal answer is not considered
+a substitute for the actual workflow, the official system of record, or the responsible owner.
+
+Managers and support teams should name a responsible owner when multiple departments are involved.
+The written process exists so similar situations get similar answers across departments, even when
+staffing, deadlines, or personalities vary. This topic works best when teams communicate early,
+document the result, and avoid side-channel decisions that are impossible to audit later.
+
+A typical operating example is this: a cross-functional issue is routed with a named owner and a
+final resolution note instead of three separate partial answers. That example illustrates why the
+company documents the topic carefully: when time pressure rises, teams still need a predictable way
+to respond without relying on guesswork, side messages, or memory.
+
+* Employees should submit tickets with dates, amounts, and the expected correction path.
+* Managers and support teams should name a responsible owner when multiple departments are
+  involved.
+* Escalate situations where pay questions are trust-sensitive and need visible ownership rather
+  than queue bouncing.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Records, Exceptions, and Escalation
+
+Exceptions should be rare, documented, and tied to a specific business reason. When a case cannot be
+resolved using the ordinary workflow, the reviewer should record the facts, identify the approving
+authority, and capture what follow-up is required.
+
+The owning team for this document is Finance Shared Services. That team may partner with Finance,
+Security, IT, or People Operations depending on the issue, but the expectation is that the employee
+or manager receives a clear answer rather than being bounced between queues without ownership.
+
+* Record the date, decision, and owner when an exception is approved.
+* Use a named escalation path for sensitive cases rather than informal forwarding.
+* Correct the source system when possible instead of hiding the issue with a workaround.
+* Close the loop with the employee after the issue is resolved.
+
+Frequently Asked Questions
+
+Q: What is the best source for an employee-facing payroll answer?
+
+Start with Payroll_FAQ.md. Use this document when the issue becomes operational or control-oriented.
+
+Q: When should payroll refuse a manual request?
+
+When it lacks approval, bypasses secure handling, or tries to avoid the HRIS and payroll control
+model.
+
+Q: Can a manager request a same-day correction?
+
+Possibly, but Finance decides based on run status, legal requirements, and employee impact.
+
+Q: Why do we ask for effective dates so often?
+
+Because compensation, benefits, and leave outcomes all depend on timing.
+
+Q: Who owns a cross-functional pay issue?
+
+Ownership should be explicit. The team that identifies the root system should either resolve it or
+make a warm handoff.
+
+Q: What belongs in an off-cycle request?
+
+Employee name, business reason, amount or pay element, urgency, approval reference, and root cause.
+
+Q: How long should records be retained?
+
+Follow company retention standards and legal guidance, but the key principle is reconstructable
+payroll decisions.
+
+Q: Why does explanation quality matter?
+
+Because payroll issues are personal and a precise explanation reduces confusion and repeat tickets.
+
+Support Contacts
+
+* Finance Shared Services manager
+* Payroll Operations lead
+* People Operations partner for compensation questions
+
+Revision Note
+
+This version was prepared for the demo environment to create a deeper, more realistic knowledge
+base. The language is intentionally practical so retrieval and summarization can surface policy-like
+answers instead of shallow FAQ snippets.

@@ -1,0 +1,340 @@
+PACIFIC BEACON SOFTWARE, INC.
+
+SERVICE DESK OPERATIONS REFERENCE
+
+Document Owner: IT Service Desk
+Effective Date: March 1, 2026
+Review Cadence: Annual review or earlier if law, process, or business operations materially change.
+Applies To: Service Desk analysts, local IT coordinators, and managers routing employee support questions.
+Purpose: Provide the internal operational companion to the employee IT guide, with triage expectations, escalation cues, and common support patterns.
+Audience Note: Internal help desk runbook rather than employee-facing copy.
+Related Documents: IT_Support_and_Access.md, Access_Policy.md, IT_Onboarding_Guide.md
+
+Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
+in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B
+workflow software and uses a standard support model across People Operations, Finance, Security, and
+a centralized IT Service Desk.
+
+This document is part of the internal demo knowledge base and is written to resemble a real handbook
+or operating guide that employees and managers could reference in a California company.
+
+How to Use This Document
+
+Use this document as the primary written guidance for service desk operations reference. Employees
+should read it for baseline expectations, while managers and support functions should use it as the
+shared reference point before creating one-off exceptions.
+
+When a situation touches other company processes, reviewers should also consult
+IT_Support_and_Access.md, Access_Policy.md, IT_Onboarding_Guide.md so decisions stay aligned across
+payroll, scheduling, access, onboarding, or benefits workflows.
+
+Roles and Responsibilities
+
+Employees are responsible for raising requests early when possible, keeping information accurate,
+and using the designated workflow or service channel instead of relying solely on informal chat or
+private messages.
+
+Managers are responsible for making timely, documented decisions, explaining operational constraints
+clearly, and partnering with IT Service Desk whenever a case becomes sensitive, unusual, or legally
+significant.
+
+* Use the system of record for approvals, changes, and final status whenever one exists.
+* Escalate early when policy interpretation, sensitive data, or employee-relations risk is
+  involved.
+* Keep explanations factual, professional, and specific enough to audit later.
+* Avoid local side deals or verbal exceptions that contradict the written standard.
+
+Triage Standards and First-Response Quality
+
+Pacific Beacon treats the quality of the first ticket note as a normal operating topic that deserves
+explicit written guidance rather than informal habit. The quality of the first ticket note affects
+employee trust, business continuity, and the quality of later decisions. This section explains how
+the company expects the topic to work in normal day-to-day operations.
+
+Employees are expected to include the service affected, the symptom, the impact, and the current
+user context. That expectation is intentionally practical: the company wants employees to know what
+good participation looks like before an issue becomes urgent or emotional. Operationally, the
+company prefers a documented workflow and a visible decision trail over personal arrangements that
+only one manager remembers later.
+
+California context matters here because remote and multi-office California work patterns mean
+on-site versus home-office context can materially change the path. For that reason, local custom or
+a quick verbal answer is not considered a substitute for the actual workflow, the official system of
+record, or the responsible owner.
+
+Managers and support teams should categorize incidents and requests carefully so downstream queues
+are not forced to guess. The written process exists so similar situations get similar answers across
+departments, even when staffing, deadlines, or personalities vary. The collaboration expectation is
+that employees raise needs clearly, managers explain constraints specifically, and support teams
+document exceptions rather than guessing.
+
+A typical operating example is this: a vague VPN is broken note becomes much more useful when the
+analyst captures network type and exact symptom. That example illustrates why the company documents
+the topic carefully: when time pressure rises, teams still need a predictable way to respond without
+relying on guesswork, side messages, or memory.
+
+* Employees should include the service affected, the symptom, the impact, and the current user
+  context.
+* Managers and support teams should categorize incidents and requests carefully so downstream
+  queues are not forced to guess.
+* Escalate situations where remote and multi-office California work patterns mean on-site versus
+  home-office context can materially change the path.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Identity Proofing and Assisted Recovery
+
+Pacific Beacon treats manual help with passwords and MFA as a normal operating topic that deserves
+explicit written guidance rather than informal habit. Manual help with passwords and mfa affects
+employee trust, business continuity, and the quality of later decisions. The goal of this section is
+to reduce ambiguity so employees and managers can make the same decision from the same written
+standard.
+
+Employees are expected to follow the identity-proofing standard before any assisted recovery action.
+That expectation is intentionally practical: the company wants employees to know what good
+participation looks like before an issue becomes urgent or emotional. From an operating standpoint,
+the process is designed to be repeatable across departments so outcomes do not depend on personality
+or team habit.
+
+California context matters here because remote employees are common, so proofing must work even when
+the user is not at a desk in an office. For that reason, local custom or a quick verbal answer is
+not considered a substitute for the actual workflow, the official system of record, or the
+responsible owner.
+
+Managers and support teams should treat manager confirmation as urgency context, not as a substitute
+for identity verification. The written process exists so similar situations get similar answers
+across departments, even when staffing, deadlines, or personalities vary. Good outcomes depend on
+the employee, manager, and support function sharing the same facts at the same time instead of
+correcting the story after the decision was made.
+
+A typical operating example is this: an employee calls from a new phone number after travel and
+still completes the approved recovery checks. That example illustrates why the company documents the
+topic carefully: when time pressure rises, teams still need a predictable way to respond without
+relying on guesswork, side messages, or memory.
+
+* Employees should follow the identity-proofing standard before any assisted recovery action.
+* Managers and support teams should treat manager confirmation as urgency context, not as a
+  substitute for identity verification.
+* Escalate situations where remote employees are common, so proofing must work even when the user
+  is not at a desk in an office.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Access Request Routing and Least-Privilege Review
+
+Pacific Beacon treats reviewing access tickets for business fit as a normal operating topic that
+deserves explicit written guidance rather than informal habit. Reviewing access tickets for business
+fit affects employee trust, business continuity, and the quality of later decisions. In practice,
+this topic matters because unclear guidance usually creates avoidable rework, escalation, or
+employee frustration.
+
+Employees are expected to describe the business task so the desk can match the right role profile
+instead of a vague broad request. That expectation is intentionally practical: the company wants
+employees to know what good participation looks like before an issue becomes urgent or emotional.
+The company uses structured approvals and service channels here because small inconsistencies often
+turn into payroll, access, or employee-relations issues later.
+
+California context matters here because remote and hybrid work make over-broad access harder to
+notice if no one reviews it deliberately. For that reason, local custom or a quick verbal answer is
+not considered a substitute for the actual workflow, the official system of record, or the
+responsible owner.
+
+Managers and support teams should ask clarifying questions when a request sounds wider than the task
+described. The written process exists so similar situations get similar answers across departments,
+even when staffing, deadlines, or personalities vary. This topic works best when teams communicate
+early, document the result, and avoid side-channel decisions that are impossible to audit later.
+
+A typical operating example is this: a manager asks for full finance access but the analyst only
+needs read-only reporting and invoice review. That example illustrates why the company documents the
+topic carefully: when time pressure rises, teams still need a predictable way to respond without
+relying on guesswork, side messages, or memory.
+
+* Employees should describe the business task so the desk can match the right role profile instead
+  of a vague broad request.
+* Managers and support teams should ask clarifying questions when a request sounds wider than the
+  task described.
+* Escalate situations where remote and hybrid work make over-broad access harder to notice if no
+  one reviews it deliberately.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Asset Issues, Shipping, and Remote Replacement
+
+Pacific Beacon treats device support as an end-to-end process as a normal operating topic that
+deserves explicit written guidance rather than informal habit. Device support as an end-to-end
+process affects employee trust, business continuity, and the quality of later decisions. This
+section explains how the company expects the topic to work in normal day-to-day operations.
+
+Employees are expected to state whether work is blocked, whether any backup exists, and whether
+shipping is feasible. That expectation is intentionally practical: the company wants employees to
+know what good participation looks like before an issue becomes urgent or emotional. Operationally,
+the company prefers a documented workflow and a visible decision trail over personal arrangements
+that only one manager remembers later.
+
+California context matters here because California home-office and office-hopping patterns make
+shipping and loaner logistics part of ordinary support. For that reason, local custom or a quick
+verbal answer is not considered a substitute for the actual workflow, the official system of record,
+or the responsible owner.
+
+Managers and support teams should track asset status, serials, and return expectations instead of
+treating replacement as a one-message favor. The written process exists so similar situations get
+similar answers across departments, even when staffing, deadlines, or personalities vary. The
+collaboration expectation is that employees raise needs clearly, managers explain constraints
+specifically, and support teams document exceptions rather than guessing.
+
+A typical operating example is this: a field employee with a damaged laptop two days before travel
+needs a fast replacement path with proper tracking. That example illustrates why the company
+documents the topic carefully: when time pressure rises, teams still need a predictable way to
+respond without relying on guesswork, side messages, or memory.
+
+* Employees should state whether work is blocked, whether any backup exists, and whether shipping
+  is feasible.
+* Managers and support teams should track asset status, serials, and return expectations instead
+  of treating replacement as a one-message favor.
+* Escalate situations where California home-office and office-hopping patterns make shipping and
+  loaner logistics part of ordinary support.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Escalation Matrix, Outages, and Communications
+
+Pacific Beacon treats broad incidents and structured updates as a normal operating topic that
+deserves explicit written guidance rather than informal habit. Broad incidents and structured
+updates affects employee trust, business continuity, and the quality of later decisions. The goal of
+this section is to reduce ambiguity so employees and managers can make the same decision from the
+same written standard.
+
+Employees are expected to watch for pattern signals and update the user-facing message path instead
+of treating every ticket as isolated. That expectation is intentionally practical: the company wants
+employees to know what good participation looks like before an issue becomes urgent or emotional.
+From an operating standpoint, the process is designed to be repeatable across departments so
+outcomes do not depend on personality or team habit.
+
+California context matters here because remote work can make a shared outage look like unrelated
+individual cases at first. For that reason, local custom or a quick verbal answer is not considered
+a substitute for the actual workflow, the official system of record, or the responsible owner.
+
+Managers and support teams should use concise, time-stamped status language that managers can relay
+without improvisation. The written process exists so similar situations get similar answers across
+departments, even when staffing, deadlines, or personalities vary. Good outcomes depend on the
+employee, manager, and support function sharing the same facts at the same time instead of
+correcting the story after the decision was made.
+
+A typical operating example is this: multiple users report authentication trouble after an
+identity-service change and the desk flags a wider incident. That example illustrates why the
+company documents the topic carefully: when time pressure rises, teams still need a predictable way
+to respond without relying on guesswork, side messages, or memory.
+
+* Employees should watch for pattern signals and update the user-facing message path instead of
+  treating every ticket as isolated.
+* Managers and support teams should use concise, time-stamped status language that managers can
+  relay without improvisation.
+* Escalate situations where remote work can make a shared outage look like unrelated individual
+  cases at first.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Case Notes, Ownership, and Closure Quality
+
+Pacific Beacon treats the long-term value of disciplined ticket notes as a normal operating topic
+that deserves explicit written guidance rather than informal habit. The long-term value of
+disciplined ticket notes affects employee trust, business continuity, and the quality of later
+decisions. In practice, this topic matters because unclear guidance usually creates avoidable
+rework, escalation, or employee frustration.
+
+Employees are expected to record the routing logic, actions taken, and final root cause clearly.
+That expectation is intentionally practical: the company wants employees to know what good
+participation looks like before an issue becomes urgent or emotional. The company uses structured
+approvals and service channels here because small inconsistencies often turn into payroll, access,
+or employee-relations issues later.
+
+California context matters here because documentation quality matters when incidents later become
+audit, security, or employee-experience questions. For that reason, local custom or a quick verbal
+answer is not considered a substitute for the actual workflow, the official system of record, or the
+responsible owner.
+
+Managers and support teams should close the loop only after the employee confirms usable working
+state or the root cause is communicated. The written process exists so similar situations get
+similar answers across departments, even when staffing, deadlines, or personalities vary. This topic
+works best when teams communicate early, document the result, and avoid side-channel decisions that
+are impossible to audit later.
+
+A typical operating example is this: a case closes with a full note that lets the next analyst
+understand exactly what failed and what changed. That example illustrates why the company documents
+the topic carefully: when time pressure rises, teams still need a predictable way to respond without
+relying on guesswork, side messages, or memory.
+
+* Employees should record the routing logic, actions taken, and final root cause clearly.
+* Managers and support teams should close the loop only after the employee confirms usable working
+  state or the root cause is communicated.
+* Escalate situations where documentation quality matters when incidents later become audit,
+  security, or employee-experience questions.
+* Document decisions in the normal workflow or system of record so the resolution can be reviewed
+  later.
+
+Records, Exceptions, and Escalation
+
+Exceptions should be rare, documented, and tied to a specific business reason. When a case cannot be
+resolved using the ordinary workflow, the reviewer should record the facts, identify the approving
+authority, and capture what follow-up is required.
+
+The owning team for this document is IT Service Desk. That team may partner with Finance, Security,
+IT, or People Operations depending on the issue, but the expectation is that the employee or manager
+receives a clear answer rather than being bounced between queues without ownership.
+
+* Record the date, decision, and owner when an exception is approved.
+* Use a named escalation path for sensitive cases rather than informal forwarding.
+* Correct the source system when possible instead of hiding the issue with a workaround.
+* Close the loop with the employee after the issue is resolved.
+
+Frequently Asked Questions
+
+Q: What belongs in the first ticket note?
+
+The affected service, the symptom, the business impact, and the current context such as remote or
+on-site status.
+
+Q: When should I escalate a ticket to Security?
+
+When credential compromise, phishing, suspicious MFA prompts, unauthorized access, or lost devices
+are involved.
+
+Q: Do managers count as identity proof?
+
+No. Managers can confirm urgency or employment context, but the user identity still needs approved
+verification.
+
+Q: How broad should access requests be granted?
+
+Grant only what the role needs and ask clarifying questions when a request sounds too broad.
+
+Q: What is a good outage communication?
+
+It states what is affected, what users should do now, when the next update is expected, and where
+official status will appear.
+
+Q: When do I open a second ticket?
+
+Only when the issue is clearly different. Duplicate tickets usually slow triage.
+
+Q: What if a remote device replacement is urgent?
+
+Capture the business deadline, current working state, and shipping constraints so asset operations
+can prioritize appropriately.
+
+Q: Why do case notes matter so much?
+
+Because the next analyst, escalation team, or auditor should be able to understand what happened
+without relying on memory.
+
+Support Contacts
+
+* IT Service Desk lead
+* Identity and access management queue
+* Asset operations coordinator
+
+Revision Note
+
+This version was prepared for the demo environment to create a deeper, more realistic knowledge
+base. The language is intentionally practical so retrieval and summarization can surface policy-like
+answers instead of shallow FAQ snippets.

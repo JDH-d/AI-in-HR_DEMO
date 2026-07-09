@@ -1,0 +1,30 @@
+AI HR Knowledge Assistant - Local Demo Instructions
+
+1. Prepare source documents
+- Put company knowledge base documents in documents/.
+- Supported formats: .txt, .md, .pdf, .docx.
+
+2. Configure environment
+- Copy .env.example to .env.
+- Set OPENAI_API_KEY.
+- Set ADMIN_TOKEN.
+
+3. Install dependencies
+- pip install -r requirements.txt
+
+4. Start local demo services
+- powershell -ExecutionPolicy Bypass -File .\run_demo.ps1
+
+5. Stop local demo services
+- powershell -ExecutionPolicy Bypass -File .\stop_demo.ps1
+
+6. Rebuild document index
+- Use the admin UI Rebuild Index action, or call POST /admin/rebuild-index with the admin token.
+
+7. Project map
+- api/: FastAPI routes and schemas.
+- services/: chat, documents, logs, RAG runtime, and LLM integration.
+- rag/: retrieval, prompts, topic routing, and index bootstrap.
+- workflow.py: SQLite workflow request storage.
+- web_ui/: Streamlit employee and admin interfaces.
+- teams_bot/: Microsoft Teams Bot Framework personal-chat integration.

@@ -1,0 +1,14 @@
+.env
+.venv/
+.demo_logs/
+.demo_state/
+.tmp_debug_stage2/
+.tmp_smoke/
+.tmp_test_runs/
+.tmp_tests/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data/*.db
+data/*.json
