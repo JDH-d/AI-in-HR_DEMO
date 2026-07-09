@@ -1,8 +1,7 @@
-﻿import os
 from pathlib import Path
 
-from PIL import Image
 import cairosvg
+from PIL import Image
 
 base = Path(r"C:\\bot\\web_ui\\assets")
 

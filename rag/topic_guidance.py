@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 _TOPIC_EXAMPLES = {
     "PTO, vacation, and sick leave": [
         "How far in advance should I request vacation?",

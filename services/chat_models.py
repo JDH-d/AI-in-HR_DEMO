@@ -16,7 +16,11 @@ class ChatTurn:
 class RetrievedChunk:
     source: str
     chunk_id: int
-    text: str
+    title: str
+    section: str
+    category: str
+    version: str
+    excerpt: str
     score: float
 
 
@@ -28,7 +32,9 @@ class ChatQuery:
 
     @property
     def latest_user_message(self) -> Optional[ChatTurn]:
-        return next((message for message in reversed(self.messages) if message.role == "user"), None)
+        return next(
+            (message for message in reversed(self.messages) if message.role == "user"), None
+        )
 
     @property
     def first_user_message(self) -> Optional[ChatTurn]:

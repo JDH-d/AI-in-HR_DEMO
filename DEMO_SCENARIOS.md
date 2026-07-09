@@ -22,17 +22,8 @@
 5. Load logs and show that user text can be masked.
 6. Load workflow requests and update one request status from `pending` to `approved`.
 
-## Teams Flow
-1. Open the personal chat with the Teams bot.
-2. Type: `help`
-3. Ask: `How often are salaries paid?`
-4. Ask: `How do I request VPN access?`
-5. Confirm that answers include a `Sources` block when document retrieval is used.
-6. Type: `clear` to reset the Teams chat history.
-
 ## Suggested Narrative
 - Start with employee self-service.
 - Show policy-grounded answers rather than generic LLM output.
 - Transition into workflow creation.
 - End with administration and auditability.
-- If useful, close with the Teams personal bot to show multi-interface support.

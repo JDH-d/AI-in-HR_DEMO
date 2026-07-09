@@ -46,8 +46,7 @@ def detect_topic_selection(text: str) -> Optional[str]:
 
     cleaned = re.sub(r"[^a-z0-9]+", " ", cleaned_raw).strip()
     normalized_topics = {
-        re.sub(r"[^a-z0-9]+", " ", topic.lower()).strip(): topic
-        for topic in SUPPORTED_TOPICS
+        re.sub(r"[^a-z0-9]+", " ", topic.lower()).strip(): topic for topic in SUPPORTED_TOPICS
     }
     digit_match = re.match(r"^(\d+)\s*[).:\-]?$", cleaned)
     if digit_match:

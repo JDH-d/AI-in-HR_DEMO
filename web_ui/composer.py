@@ -230,7 +230,9 @@ def _disable_composer_spellcheck() -> None:
 def render_composer(*, disabled: bool) -> ComposerAction:
     _disable_composer_spellcheck()
     with st.container(key="composer_shell"):
-        with st.container(key="composer_bar", horizontal=True, vertical_alignment="center", gap="small"):
+        with st.container(
+            key="composer_bar", horizontal=True, vertical_alignment="center", gap="small"
+        ):
             toggle_col, form_col = st.columns([1, 12], gap="small", vertical_alignment="center")
 
             with toggle_col:
@@ -243,8 +245,15 @@ def render_composer(*, disabled: bool) -> ComposerAction:
                 )
 
             with form_col:
-                with st.form("composer_form", clear_on_submit=False, enter_to_submit=not disabled, border=False):
-                    input_col, send_col = st.columns([12, 1], gap="small", vertical_alignment="center")
+                with st.form(
+                    "composer_form",
+                    clear_on_submit=False,
+                    enter_to_submit=not disabled,
+                    border=False,
+                ):
+                    input_col, send_col = st.columns(
+                        [12, 1], gap="small", vertical_alignment="center"
+                    )
                     with input_col:
                         st.text_input(
                             "Ask a company policy question",

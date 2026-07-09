@@ -8,7 +8,7 @@
 **Applies To:** All employees, approved contingent workers, and managers submitting access requests.
 **Purpose:** Explain how employees get help with hardware, software, password resets, VPN, system access, and security-sensitive issues.
 **Audience Note:** Core employee-facing IT support guide for the demo.
-**Related Documents:** IT_Support.txt, Access_Policy.md, IT_Onboarding_Guide.md
+**Related Documents:** Access_Policy.md, IT_Onboarding_Guide.md
 
 Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
 in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B

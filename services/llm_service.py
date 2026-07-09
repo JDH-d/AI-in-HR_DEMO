@@ -1,8 +1,21 @@
 from __future__ import annotations
 
-from typing import List, Optional
+import logging
+from collections.abc import Callable
+from typing import Optional
 
-from openai import OpenAI, OpenAIError
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    OpenAI,
+    OpenAIError,
+    RateLimitError,
+)
+
+from .openai_client import create_openai_client
+
+logger = logging.getLogger(__name__)
 
 
 class LLMServiceError(RuntimeError):
@@ -10,82 +23,60 @@ class LLMServiceError(RuntimeError):
 
 
 class LLMService:
-    def __init__(self, primary_model: str, fallback_model: str) -> None:
-        self.primary_model = primary_model
-        self.fallback_model = fallback_model
+    def __init__(
+        self,
+        model: str,
+        client_factory: Callable[[], OpenAI] | None = None,
+    ) -> None:
+        self.model = model
+        self.client_factory = client_factory or create_openai_client
         self.client: Optional[OpenAI] = None
 
-    def generate(self, prompt_messages: List[dict]) -> str:
-        client = self._get_client()
+    def generate(self, prompt_messages: list[dict]) -> str:
         try:
-            if hasattr(client, "responses"):
-                resp = client.responses.create(
-                    model=self.primary_model,
-                    input=prompt_messages,
-                    max_output_tokens=512,
-                )
-                if getattr(resp, "output_text", None):
-                    return resp.output_text.strip()
-
-                text_parts: List[str] = []
-                for item in getattr(resp, "output", []) or []:
-                    item_type = getattr(item, "type", None) or (
-                        item.get("type") if isinstance(item, dict) else None
-                    )
-                    if item_type != "message":
-                        continue
-                    item_content = getattr(item, "content", None) or (
-                        item.get("content") if isinstance(item, dict) else None
-                    )
-                    if not item_content:
-                        continue
-                    for part in item_content:
-                        if isinstance(part, dict):
-                            if part.get("type") in {"output_text", "text"} and part.get("text"):
-                                text_parts.append(part["text"])
-                            elif part.get("text"):
-                                text_parts.append(part["text"])
-                        else:
-                            part_type = getattr(part, "type", None)
-                            part_text = getattr(part, "text", None)
-                            if part_type in {"output_text", "text"} and part_text:
-                                text_parts.append(part_text)
-                text = "".join(text_parts).strip()
-                if text:
-                    return text
-
-            legacy_messages: List[dict] = []
-            for message in prompt_messages:
-                content = message.get("content", "")
-                if isinstance(content, list) and content:
-                    first = content[0]
-                    if isinstance(first, dict) and first.get("type") == "input_text":
-                        content = first.get("text", "")
-                legacy_messages.append(
-                    {"role": message.get("role", "user"), "content": content}
-                )
-
-            resp = client.chat.completions.create(
-                model=self.fallback_model,
-                messages=legacy_messages,
-                max_completion_tokens=512,
+            response = self._get_client().responses.create(
+                model=self.model,
+                input=prompt_messages,
+                max_output_tokens=512,
+                store=False,
             )
-            return (resp.choices[0].message.content or "").strip()
-        except (
-            AttributeError,
-            IndexError,
-            KeyError,
-            OpenAIError,
-            TypeError,
-            ValueError,
-        ) as exc:
-            raise LLMServiceError("LLM generation failed") from exc
+            content = (response.output_text or "").strip()
+            if not content:
+                raise LLMServiceError("OpenAI returned an empty text response")
+            return content
+        except LLMServiceError:
+            raise
+        except APITimeoutError as exc:
+            logger.warning("OpenAI response timed out model=%s", self.model)
+            raise LLMServiceError("OpenAI response timed out") from exc
+        except RateLimitError as exc:
+            logger.warning("OpenAI rate limit reached model=%s", self.model)
+            raise LLMServiceError("OpenAI rate limit reached") from exc
+        except APIStatusError as exc:
+            logger.warning(
+                "OpenAI API status error model=%s status=%s request_id=%s",
+                self.model,
+                exc.status_code,
+                getattr(exc, "request_id", None),
+            )
+            raise LLMServiceError("OpenAI API returned an error") from exc
+        except APIConnectionError as exc:
+            logger.warning("OpenAI connection failed model=%s", self.model)
+            raise LLMServiceError("OpenAI connection failed") from exc
+        except (AttributeError, IndexError, KeyError, OpenAIError, TypeError, ValueError) as exc:
+            logger.warning(
+                "OpenAI response handling failed model=%s error=%s",
+                self.model,
+                type(exc).__name__,
+            )
+            raise LLMServiceError("OpenAI response handling failed") from exc
 
     def _get_client(self) -> OpenAI:
         if self.client is not None:
             return self.client
         try:
-            self.client = OpenAI()
+            self.client = self.client_factory()
         except (OpenAIError, OSError, TypeError, ValueError) as exc:
+            logger.warning("OpenAI client initialization failed error=%s", type(exc).__name__)
             raise LLMServiceError("OpenAI client is not configured") from exc
         return self.client

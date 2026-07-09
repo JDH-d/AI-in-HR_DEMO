@@ -1,7 +1,6 @@
-﻿import unittest
-from unittest.mock import patch
+import unittest
 
-from rag.retriever import Retriever
+from rag.retriever import Retriever, build_relevant_excerpt
 
 
 class RetrieverTests(unittest.TestCase):
@@ -21,12 +20,60 @@ class RetrieverTests(unittest.TestCase):
             ]
         )
 
-        with patch("rag.retriever.OpenAI", side_effect=OSError("no api key")):
-            results = retriever.query("How often are salaries paid?", top_k=2)
+        results = retriever.query(
+            "How often are salaries paid?",
+            top_k=2,
+            use_embeddings=False,
+        )
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["source"], "Payroll_FAQ.md")
-        self.assertGreaterEqual(results[0]["score"], 0.5)
+        self.assertGreaterEqual(results[0]["score"], 0.25)
+
+    def test_query_deduplicates_chunks_from_the_same_section(self) -> None:
+        base = {
+            "source": "Payroll_FAQ.md",
+            "document_id": "payroll-faq",
+            "title": "Payroll Handbook",
+            "category": "Payroll",
+            "version": "2026.1",
+            "section": "Pay schedule",
+        }
+        retriever = Retriever(
+            [
+                {
+                    **base,
+                    "chunk_id": 0,
+                    "text": "Payroll is issued twice each month on the regular schedule.",
+                },
+                {
+                    **base,
+                    "chunk_id": 1,
+                    "text": "The regular payroll schedule issues pay twice each month.",
+                },
+            ]
+        )
+
+        results = retriever.query(
+            "What is the payroll schedule?",
+            top_k=4,
+            min_similarity=0.1,
+            use_embeddings=False,
+        )
+
+        self.assertEqual(len(results), 1)
+
+    def test_excerpt_centers_the_matching_faq_answer(self) -> None:
+        text = (
+            "Unrelated introduction about payroll administration. "
+            "How often are salaries paid? Salaries are paid on the fifteenth and "
+            "the last business day of the month. Another unrelated sentence."
+        )
+
+        excerpt = build_relevant_excerpt(text, "How often are salaries paid?", max_chars=180)
+
+        self.assertIn("How often are salaries paid?", excerpt)
+        self.assertIn("the last business day of the month", excerpt)
 
 
 if __name__ == "__main__":

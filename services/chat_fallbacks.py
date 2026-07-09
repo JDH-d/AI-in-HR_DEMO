@@ -19,10 +19,7 @@ class ChatFallbackPolicy:
 
     def topic_selection(self, language: str, topic: str) -> str:
         examples = self._format_topic_examples(topic)
-        return (
-            f"You selected {topic}. What would you like to know?\n"
-            f"Examples:\n{examples}"
-        )
+        return f"You selected {topic}. What would you like to know?\nExamples:\n{examples}"
 
     def topic_answer(self, language: str, topic: str, matched_text: str) -> str:
         cleaned = (matched_text or "").strip()
@@ -30,8 +27,7 @@ class ChatFallbackPolicy:
             return cleaned
         examples = self._format_topic_examples(topic)
         return (
-            f"I can help with {topic}, but I need a more specific question.\n"
-            f"Examples:\n{examples}"
+            f"I can help with {topic}, but I need a more specific question.\nExamples:\n{examples}"
         )
 
     def invalid(self, language: str) -> str:
@@ -41,7 +37,10 @@ class ChatFallbackPolicy:
         )
 
     def no_docs(self, language: str) -> str:
-        return "I could not find a reliable answer in the internal documents.\n" + self.capabilities(language)
+        return (
+            "I could not find a reliable answer in the internal documents.\n"
+            + self.capabilities(language)
+        )
 
     def service_unavailable(self, language: str) -> str:
         return (

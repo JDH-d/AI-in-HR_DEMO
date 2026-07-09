@@ -12,10 +12,9 @@ The included demo uses HR and IT policies because they are easy to understand in
 ## Features
 - Employee-facing chat for company policy and operations questions
 - Retrieval-augmented generation over internal documents
-- Source snippets returned with assistant answers
+- Section-aware source citations with document title, category, and version
 - Workflow creation for PTO, sick leave, and document requests
 - Admin console for prompts, documents, logs, index rebuilds, and request status updates
-- Optional Microsoft Teams personal bot for employee chat
 - Configurable log privacy via `LOG_USER_TEXT_MODE`
 - Local-first setup with FastAPI, Streamlit, SQLite, and OpenAI models
 
@@ -40,8 +39,6 @@ For a business reviewer, the value proposition is simple: reduce repetitive inte
 ├─ rag/                       # Prompts, retrieval, topic routing, index bootstrap
 ├─ workflow.py                # SQLite workflow request storage
 ├─ web_ui/                    # Streamlit employee and admin interfaces
-├─ teams_bot/                 # Microsoft Teams Bot Framework integration
-├─ teams_app_manifest/        # Teams app manifest template and icons
 ├─ documents/                 # Demo knowledge base documents
 ├─ docs/                      # API and architecture notes
 ├─ tests/                     # Unit and interaction tests
@@ -73,9 +70,14 @@ For a business reviewer, the value proposition is simple: reduce repetitive inte
    source .venv/bin/activate
    ```
 
-2) Install dependencies
+2) Install runtime dependencies
 ```bash
 pip install -r requirements.txt
+```
+
+For local development and validation, install the development dependencies instead:
+```bash
+pip install -r requirements-dev.txt
 ```
 
 3) Configure environment
@@ -107,8 +109,9 @@ The app reads configuration from environment variables via `.env`.
 | Variable | Required | Default | Notes |
 |----------|----------|---------|-------|
 | `OPENAI_API_KEY` | Yes | — | OpenAI API key used for generation and embeddings. |
-| `OPENAI_MODEL` | No | `gpt-5-nano` | Primary model used by the assistant. |
-| `OPENAI_FALLBACK_MODEL` | No | `gpt-4o-mini` | Fallback chat model. |
+| `OPENAI_MODEL` | No | `gpt-5-nano-2025-08-07` | Explicit model snapshot used by the assistant. |
+| `OPENAI_TIMEOUT_SECONDS` | No | `30` | OpenAI request timeout in seconds. |
+| `OPENAI_MAX_RETRIES` | No | `2` | SDK retries for transient API failures. |
 | `EMBEDDING_MODEL` | No | `text-embedding-3-small` | Embedding model for document retrieval. |
 | `ADMIN_TOKEN` | Yes | `change-me` | Token required for admin endpoints and admin UI actions. |
 | `DOCUMENTS_DIR` | No | `documents` | Directory containing source documents. |
@@ -118,16 +121,12 @@ The app reads configuration from environment variables via `.env`.
 | `SYSTEM_PROMPT_PATH` | No | `data/system_prompt.txt` | Runtime-editable system prompt path. |
 | `LOG_USER_TEXT_MODE` | No | `masked` | Use `masked`, `raw`, or `off`. |
 | `API_BASE_URL` | No | `http://127.0.0.1:8000` | API URL used by the Streamlit UI. |
-| `MICROSOFT_APP_ID` | Teams only | empty | Azure Bot application/client ID. |
-| `MICROSOFT_APP_PASSWORD` | Teams only | empty | Azure Bot client secret. |
-| `MICROSOFT_APP_TENANT_ID` | Teams only | empty | Microsoft Entra tenant ID. |
-| `TEAMS_BOT_HISTORY_DB` | No | `data/teams_conversations.db` | SQLite history for Teams personal chats. |
 
 ## How It Works
 - The employee UI sends chat messages to the FastAPI backend.
 - `ChatService` routes the request through intent detection, workflow creation, or retrieval-backed answering.
 - The RAG layer builds or loads a local document index and retrieves relevant chunks from `documents/`.
-- The assistant generates a concise answer using the retrieved context and returns source snippets.
+- The assistant generates a concise answer using the retrieved context and returns section-aware citations.
 - Workflow-style messages can create SQLite-backed requests.
 - The admin UI can inspect logs, update prompts, manage documents, rebuild the index, and update request statuses.
 
@@ -147,7 +146,6 @@ The app reads configuration from environment variables via `.env`.
 5. Create a workflow request.
 6. Open the admin console and review the created request.
 7. Show document management, logs, prompt configuration, or index rebuild.
-8. Optionally show the same employee chat flow through Microsoft Teams personal chat.
 
 Detailed scripts are available in [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md).
 
@@ -164,13 +162,13 @@ The domain changes primarily by replacing the documents, prompts, workflow scena
 
 ## Architecture
 ```text
-Employee Web UI / Teams Personal Bot
+    Employee Web UI
           |
           v
-     FastAPI Backend
+    FastAPI Backend
           |
           v
-      ChatService
+     ChatService
    /      |        \
   /       |         \
 NLP   Workflow      RAG
@@ -183,9 +181,12 @@ NLP   Workflow      RAG
 More detail is available in [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md).
 
 ## Validation
-Run the test suite:
+Run the test suite and static checks:
 ```powershell
 python -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
+python -m scripts.run_rag_eval
 ```
 
 Before a live demo, run the smoke check:
@@ -193,7 +194,7 @@ Before a live demo, run the smoke check:
 powershell -ExecutionPolicy Bypass -File .\smoke_check.ps1
 ```
 
-The smoke check validates unit tests, API health, a core chat flow, workflow creation, and admin authentication.
+The smoke check validates unit tests, the deterministic RAG evaluation, API health, a core chat flow, workflow creation, and admin authentication.
 
 ## API-Only Docker Run
 ```powershell
@@ -203,23 +204,12 @@ docker run --rm -p 8000:8000 --env-file .env enterprise-knowledge-assistant
 
 The Docker target is intentionally API-only. The Streamlit apps are local presentation tools and are started by `run_demo.ps1`.
 
-## Microsoft Teams Bot
-The Teams integration is a Bot Framework personal-chat bot, not an outgoing webhook. The bot uses the same backend path as the Web UI and appends source documents below answers when retrieval returns sources.
-
-Run the API:
-```powershell
-python -m uvicorn app:app --host 127.0.0.1 --port 8000
-```
-
-Expose `POST /api/messages` over public HTTPS, configure Azure Bot Service, and upload the generated Teams app package. See [TEAMS_SETUP.md](TEAMS_SETUP.md).
-
 ## Troubleshooting
 - Missing API key: set `OPENAI_API_KEY` in `.env`.
 - Admin actions fail: check that `ADMIN_TOKEN` is set and loaded by the UI.
 - Index not updating after document changes: use the admin UI `Rebuild Index` action.
 - Demo services already running: restart with `.\run_demo.ps1 -ForceRestart`.
 - API unavailable in the UI: confirm that http://127.0.0.1:8000/health returns `{"status":"ok"}`.
-- Teams bot does not respond: verify Azure Bot messaging endpoint, `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, Teams channel enablement, and the public HTTPS tunnel.
 
 ## Privacy & Data Handling
 - Source documents are stored locally in `documents/`.
@@ -248,4 +238,3 @@ Expose `POST /api/messages` over public HTTPS, configure Azure Bot Service, and 
 - API summary: [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md)
 - Architecture overview: [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md)
 - Demo scripts: [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md)
-- Teams setup: [TEAMS_SETUP.md](TEAMS_SETUP.md)

@@ -50,8 +50,11 @@ Typical response fields:
   "sources": [
     {
       "source": "Payroll_FAQ.md",
-      "chunk_id": 0,
-      "text": "...",
+      "title": "Payroll and Pay Practices Handbook",
+      "section": "How often are salaries paid?",
+      "category": "Payroll",
+      "version": "2026.1",
+      "excerpt": "Pacific Beacon pays on a semi-monthly schedule...",
       "score": 0.87
     }
   ]

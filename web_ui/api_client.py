@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 
 import requests
 
-
 DEFAULT_API_BASE_URL = "http://localhost:8000"
 
 
@@ -75,14 +74,10 @@ def extract_assistant_sources(data: object) -> list[dict]:
         if not isinstance(item, dict):
             continue
         source = str(item.get("source", "")).strip()
-        text = str(item.get("text", "")).strip()
-        if not source:
+        title = str(item.get("title", "")).strip() or source
+        excerpt = str(item.get("excerpt", "")).strip()
+        if not title or not excerpt:
             continue
-        chunk_id_raw = item.get("chunk_id", -1)
-        try:
-            chunk_id = int(chunk_id_raw)
-        except (TypeError, ValueError):
-            chunk_id = -1
 
         score_raw = item.get("score")
         try:
@@ -93,8 +88,11 @@ def extract_assistant_sources(data: object) -> list[dict]:
         normalized.append(
             {
                 "source": source,
-                "chunk_id": chunk_id,
-                "text": text,
+                "title": title,
+                "section": str(item.get("section", "")).strip() or "Document overview",
+                "category": str(item.get("category", "")).strip() or "General",
+                "version": str(item.get("version", "")).strip() or "unversioned",
+                "excerpt": excerpt,
                 "score": score,
             }
         )
@@ -121,7 +119,9 @@ class DemoAPIClient:
         self.api_base_url = resolved_base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
-    def request(self, method: str, path: str, headers: dict | None = None, **kwargs) -> requests.Response:
+    def request(
+        self, method: str, path: str, headers: dict | None = None, **kwargs
+    ) -> requests.Response:
         url = f"{self.api_base_url}{path}"
         debug_enabled = os.getenv("DEBUG_API_CLIENT") == "1"
         if debug_enabled:
@@ -155,7 +155,9 @@ class DemoAPIClient:
             headers["X-User"] = user_id
         return self.request("GET", "/requests", headers=headers)
 
-    def admin_request(self, method: str, path: str, token: str | None, **kwargs) -> requests.Response:
+    def admin_request(
+        self, method: str, path: str, token: str | None, **kwargs
+    ) -> requests.Response:
         headers = {}
         if token:
             headers["X-Admin-Token"] = token

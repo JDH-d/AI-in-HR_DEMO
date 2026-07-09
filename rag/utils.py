@@ -1,10 +1,6 @@
-from .nlp import Intent, SUPPORTED_TOPICS, detect_intent, detect_language, detect_topic_selection
+from .nlp import SUPPORTED_TOPICS, Intent, detect_intent, detect_language, detect_topic_selection
 from .prompts import (
-    build_capabilities_prompt,
-    build_invalid_prompt,
     build_rag_prompt,
-    build_small_talk_prompt,
-    build_topic_selection_prompt,
     load_system_prompt,
     save_system_prompt,
 )
@@ -17,12 +13,7 @@ __all__ = [
     "detect_intent",
     "detect_language",
     "detect_topic_selection",
-    "build_capabilities_prompt",
-    "build_invalid_prompt",
     "build_rag_prompt",
-    "build_small_talk_prompt",
-    "build_topic_selection_prompt",
     "load_system_prompt",
     "save_system_prompt",
 ]
-

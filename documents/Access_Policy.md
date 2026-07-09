@@ -8,7 +8,7 @@
 **Applies To:** All employees, approved contractors, system owners, and managers requesting or approving access.
 **Purpose:** Define least-privilege access, role-based approvals, authentication standards, privileged access controls, and acceptable use expectations.
 **Audience Note:** Formal access policy with enough detail to ground the demo.
-**Related Documents:** IT_Support_and_Access.md, IT_Support.txt, IT_Onboarding_Guide.md
+**Related Documents:** IT_Support_and_Access.md, IT_Onboarding_Guide.md
 
 Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
 in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B

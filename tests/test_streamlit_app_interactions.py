@@ -55,10 +55,14 @@ class StreamlitComposerInteractionTests(unittest.TestCase):
         self._assert_single_composer(app, disabled=False)
 
     def test_first_in_flight_render_keeps_single_disabled_composer(self) -> None:
-        with patch("web_ui.api_client.DemoAPIClient.chat", return_value=DummyResponse()), patch(
-            "web_ui.streamlit_app._stream_assistant_response",
-            return_value=None,
-        ), patch("web_ui.streamlit_app.st.rerun", return_value=None):
+        with (
+            patch("web_ui.api_client.DemoAPIClient.chat", return_value=DummyResponse()),
+            patch(
+                "web_ui.streamlit_app._stream_assistant_response",
+                return_value=None,
+            ),
+            patch("web_ui.streamlit_app.st.rerun", return_value=None),
+        ):
             app = AppTest.from_file(os.path.join("web_ui", "streamlit_app.py"))
             app.session_state["messages"] = []
             app.session_state["composer_draft"] = "stale draft"

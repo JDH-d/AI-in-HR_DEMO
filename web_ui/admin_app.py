@@ -8,14 +8,15 @@ import streamlit as st
 
 from .api_client import DemoAPIClient
 
-
 ENV_ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 
 def main() -> None:
     st.set_page_config(page_title="Administration Console", layout="wide")
     st.title("Administration Console")
-    st.caption("Manage prompt configuration, source documents, audit logs, and workflow requests for the demo environment.")
+    st.caption(
+        "Manage prompt configuration, source documents, audit logs, and workflow requests for the demo environment."
+    )
     api_client = DemoAPIClient(timeout_seconds=30)
 
     if "admin_token" not in st.session_state:
@@ -100,14 +101,21 @@ def main() -> None:
     if documents:
         for doc in documents:
             name = doc.get("name", "")
+            title = doc.get("title", "")
+            category = doc.get("category", "")
+            version = doc.get("version", "")
             size = doc.get("size", 0)
             modified = doc.get("modified", "")
-            row = st.columns([4, 1, 2, 1])
-            row[0].write(name)
-            row[1].write(f"{size} bytes")
-            row[2].write(modified)
-            if row[3].button("Delete", key=f"del-{name}"):
-                resp = _admin_request(api_client, "DELETE", f"/admin/documents/{quote(name)}", token)
+            row = st.columns([3, 2, 1, 1, 2, 1])
+            row[0].write(title or name)
+            row[1].write(category)
+            row[2].write(f"v{version}")
+            row[3].write(f"{size} bytes")
+            row[4].write(modified)
+            if row[5].button("Delete", key=f"del-{name}"):
+                resp = _admin_request(
+                    api_client, "DELETE", f"/admin/documents/{quote(name)}", token
+                )
                 if resp is not None:
                     if resp.status_code == 200:
                         st.success(f"Document deleted: {name}")
@@ -168,9 +176,7 @@ def main() -> None:
             status_options = ["new", "pending", "approved", "declined", "done"]
             current_status = (req.get("status") or "pending").lower()
             status_index = (
-                status_options.index(current_status)
-                if current_status in status_options
-                else 1
+                status_options.index(current_status) if current_status in status_options else 1
             )
             cols = st.columns([2, 1, 1, 1, 2, 1, 1])
             cols[0].write(req.get("id", ""))

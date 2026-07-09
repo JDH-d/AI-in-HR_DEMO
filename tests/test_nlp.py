@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 
 from rag.nlp import Intent, detect_intent, detect_topic_selection
 from web_ui.streamlit_app import DEMO_PROMPTS

@@ -8,7 +8,7 @@
 **Applies To:** All U.S. employees, with California-specific notes called out where relevant.
 **Purpose:** Explain payroll timing, direct deposit, payslips, deductions, reimbursements, final pay, and common pay-related questions in language employees can understand quickly.
 **Audience Note:** Employee-friendly payroll handbook for the demo.
-**Related Documents:** Salary_and_Payroll.txt, Benefits_Enrollment_Guide.md, PTO_Policy.md
+**Related Documents:** Benefits_Enrollment_Guide.md, PTO_Policy.md
 
 Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
 in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B

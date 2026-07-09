@@ -3,16 +3,17 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+from collections.abc import Callable
 
 from rag.index import ensure_index, get_retriever
-from rag.prompts import build_invalid_prompt, build_rag_prompt, build_topic_answer_prompt
+from rag.nlp import Intent
+from rag.prompts import build_rag_prompt
 from rag.retriever import RetrieverError
 
 from .chat_fallbacks import ChatFallbackPolicy
 from .chat_models import ChatOutcome, ChatQuery, RetrievedChunk, RoutingDecision
 from .document_service import DocumentService
 from .llm_service import LLMService, LLMServiceError
-
 
 logger = logging.getLogger(__name__)
 
@@ -23,25 +24,14 @@ class RAGService:
         llm_service: LLMService,
         document_service: DocumentService,
         fallback_policy: ChatFallbackPolicy,
+        index_ensurer: Callable[[], None] | None = None,
+        retriever_provider: Callable | None = None,
     ) -> None:
         self.llm_service = llm_service
         self.document_service = document_service
         self.fallback_policy = fallback_policy
-
-    def answer_from_topic(self, topic: str, user_text: str, language: str) -> str | None:
-        doc_text = self.document_service.load_text_for_topic(topic)
-        if not doc_text:
-            return None
-        prompt_context = self.document_service.build_topic_prompt_context(doc_text, user_text)
-        fallback_text = self.fallback_policy.topic_answer(
-            language,
-            topic,
-            self.document_service.filter_doc_by_query(doc_text, user_text),
-        )
-        return self.generate_with_fallback(
-            build_topic_answer_prompt(language, topic, user_text, prompt_context),
-            fallback_text,
-        )
+        self.index_ensurer = index_ensurer
+        self.retriever_provider = retriever_provider
 
     def answer_with_retrieval(self, query: ChatQuery, decision: RoutingDecision) -> ChatOutcome:
         latest_user = query.latest_user_message
@@ -53,10 +43,20 @@ class RAGService:
             )
 
         try:
-            ensure_index()
-            retriever = get_retriever()
+            if self.index_ensurer:
+                self.index_ensurer()
+            else:
+                ensure_index()
+            retriever = self.retriever_provider() if self.retriever_provider else get_retriever()
+            retrieval_text = latest_user.content
+            if (
+                decision.intent == Intent.WORK
+                and decision.prior_topic
+                and not decision.explicit_topic_choice
+            ):
+                retrieval_text = f"{decision.prior_topic}. {retrieval_text}"
             results = retriever.query(
-                latest_user.content,
+                retrieval_text,
                 top_k=query.top_k,
                 min_similarity=query.min_similarity,
             )
@@ -70,13 +70,10 @@ class RAGService:
             )
 
         if not results:
-            content = self.generate_with_fallback(
-                build_invalid_prompt(
-                    decision.language,
-                    query.messages,
-                    reason="no_relevant_docs",
-                ),
-                self.fallback_policy.no_docs(decision.language),
+            content = (
+                self.fallback_policy.invalid(decision.language)
+                if decision.intent == Intent.INVALID
+                else self.fallback_policy.no_docs(decision.language)
             )
             return ChatOutcome(
                 content=content,
@@ -98,14 +95,18 @@ class RAGService:
             RetrievedChunk(
                 source=result["source"],
                 chunk_id=result["chunk_id"],
-                text=result["text"],
+                title=result["title"],
+                section=result["section"],
+                category=result["category"],
+                version=result["version"],
+                excerpt=result["excerpt"],
                 score=result["score"],
             )
             for result in results
         ]
         return ChatOutcome(
             content=content,
-            intent=decision.intent,
+            intent=Intent.WORK,
             language=decision.language,
             sources=sources,
         )
@@ -176,7 +177,7 @@ class RAGService:
             idx = lowered_text.find(lowered_query)
             if idx < 0:
                 continue
-            tail = normalized_text[idx + len(lowered_query):].strip(" :-\n\t")
+            tail = normalized_text[idx + len(lowered_query) :].strip(" :-\n\t")
             if not tail:
                 continue
             parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", tail) if part.strip()]

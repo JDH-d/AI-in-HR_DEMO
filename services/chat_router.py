@@ -61,29 +61,31 @@ class ChatRouter:
         if not lowered:
             return False
         if any(
-            phrase in lowered
-            for phrase in ("tell me a joke", "joke", "weather", "movie", "music")
+            phrase in lowered for phrase in ("tell me a joke", "joke", "weather", "movie", "music")
         ):
             return False
-        return any(
-            lowered.startswith(prefix)
-            for prefix in (
-                "how ",
-                "what ",
-                "when ",
-                "where ",
-                "which ",
-                "can ",
-                "could ",
-                "do ",
-                "does ",
-                "is ",
-                "are ",
-                "am ",
-                "will ",
-                "would ",
-                "any ",
-                "and ",
-                "also ",
+        return (
+            any(
+                lowered.startswith(prefix)
+                for prefix in (
+                    "how ",
+                    "what ",
+                    "when ",
+                    "where ",
+                    "which ",
+                    "can ",
+                    "could ",
+                    "do ",
+                    "does ",
+                    "is ",
+                    "are ",
+                    "am ",
+                    "will ",
+                    "would ",
+                    "any ",
+                    "and ",
+                    "also ",
+                )
             )
-        ) or "?" in lowered
+            or "?" in lowered
+        )

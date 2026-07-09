@@ -8,11 +8,9 @@ from .document_service import DocumentService
 from .llm_service import LLMService
 from .log_service import ChatLogService
 
-
 workflow_service = WorkflowService(str(settings.WORKFLOW_DB))
 llm_service = LLMService(
-    primary_model=settings.OPENAI_MODEL,
-    fallback_model=settings.OPENAI_FALLBACK_MODEL,
+    model=settings.OPENAI_MODEL,
 )
 log_service = ChatLogService(
     settings.LOG_PATH,

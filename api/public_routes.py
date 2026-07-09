@@ -6,7 +6,6 @@ from fastapi import APIRouter, Header
 
 from services.runtime import workflow_service
 
-
 router = APIRouter()
 
 
@@ -19,4 +18,3 @@ def health() -> dict:
 def list_requests(x_user: Optional[str] = Header(None)) -> dict:
     created_by = (x_user or "").strip() or "anonymous"
     return {"requests": workflow_service.list_for_user(created_by)}
-

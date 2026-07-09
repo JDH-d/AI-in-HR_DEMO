@@ -8,6 +8,7 @@ $env:INDEX_PATH = Join-Path $tmpDir "index.json"
 $env:SYSTEM_PROMPT_PATH = Join-Path $tmpDir "system_prompt.txt"
 $env:ADMIN_TOKEN = "demo-admin-token"
 $env:PYTHONUNBUFFERED = "1"
+$env:PYTHONDONTWRITEBYTECODE = "1"
 
 if (Test-Path $tmpDir) {
     Remove-Item $tmpDir -Recurse -Force
@@ -18,9 +19,14 @@ Push-Location $root
 $proc = $null
 
 try {
-    python -m unittest discover -s tests -p "test_*.py"
+    python -m pytest -q -p no:cacheprovider
     if ($LASTEXITCODE -ne 0) {
         throw "Unit tests failed."
+    }
+
+    python -m scripts.run_rag_eval
+    if ($LASTEXITCODE -ne 0) {
+        throw "RAG evaluation failed."
     }
 
     $proc = Start-Process -FilePath python -ArgumentList @("-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8011") -WorkingDirectory $root -PassThru -WindowStyle Hidden

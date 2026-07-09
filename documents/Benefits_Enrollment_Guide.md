@@ -8,7 +8,7 @@
 **Applies To:** Benefit-eligible employees in California and approved dependents where applicable.
 **Purpose:** Guide employees through eligibility, enrollment windows, plan selection, dependents, life events, and payroll deduction timing with enough detail for self-service decisions.
 **Audience Note:** Practical open-enrollment handbook for a California software company.
-**Related Documents:** Benefits.docx, Payroll_FAQ.md, PTO_Policy.md
+**Related Documents:** Payroll_FAQ.md, PTO_Policy.md
 
 Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
 in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B

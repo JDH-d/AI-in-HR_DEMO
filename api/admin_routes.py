@@ -11,7 +11,6 @@ from rag.prompts import load_system_prompt, save_system_prompt
 from services.runtime import document_service, log_service, workflow_service
 from workflow import VALID_STATUSES
 
-
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -35,9 +34,7 @@ def admin_list_documents(_: None = Depends(require_admin)) -> dict:
 
 
 @router.post("/admin/documents")
-def admin_upload_document(
-    file: UploadFile = File(...), _: None = Depends(require_admin)
-) -> dict:
+def admin_upload_document(file: UploadFile = File(...), _: None = Depends(require_admin)) -> dict:
     name = document_service.save_upload(file)
     return {"status": "ok", "name": name}
 
@@ -79,7 +76,9 @@ def admin_update_request_status(
 ) -> dict:
     status = payload.status.strip().lower()
     if status not in VALID_STATUSES:
-        raise HTTPException(status_code=400, detail="The requested workflow status is not supported.")
+        raise HTTPException(
+            status_code=400, detail="The requested workflow status is not supported."
+        )
     updated = workflow_service.update_status(request_id, status)
     if not updated:
         raise HTTPException(status_code=404, detail="The workflow request could not be found.")

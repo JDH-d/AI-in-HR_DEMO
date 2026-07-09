@@ -10,7 +10,9 @@ from typing import List, Optional
 class ChatLogService:
     def __init__(self, log_path: Path, user_text_mode: str = "masked") -> None:
         self.log_path = log_path
-        self.user_text_mode = user_text_mode if user_text_mode in {"raw", "masked", "off"} else "masked"
+        self.user_text_mode = (
+            user_text_mode if user_text_mode in {"raw", "masked", "off"} else "masked"
+        )
 
     def append_chat(
         self,

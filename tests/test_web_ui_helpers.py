@@ -19,8 +19,11 @@ class WebUIHelperTests(unittest.TestCase):
             "sources": [
                 {
                     "source": "Payroll_FAQ.md",
-                    "chunk_id": 0,
-                    "text": "Salaries are paid twice per month.",
+                    "title": "Payroll and Pay Practices Handbook",
+                    "section": "How often are salaries paid?",
+                    "category": "Payroll",
+                    "version": "2026.1",
+                    "excerpt": "Salaries are paid twice per month.",
                     "score": 0.873,
                 }
             ],
@@ -30,7 +33,8 @@ class WebUIHelperTests(unittest.TestCase):
 
         self.assertEqual(len(sources), 1)
         self.assertEqual(sources[0]["source"], "Payroll_FAQ.md")
-        self.assertEqual(sources[0]["chunk_id"], 0)
+        self.assertEqual(sources[0]["title"], "Payroll and Pay Practices Handbook")
+        self.assertEqual(sources[0]["section"], "How often are salaries paid?")
         self.assertAlmostEqual(sources[0]["score"], 0.873)
 
     def test_extract_assistant_sources_ignores_invalid_payload(self) -> None:
@@ -70,17 +74,23 @@ class WebUIHelperTests(unittest.TestCase):
             sources=[
                 {
                     "source": "Payroll_FAQ.md",
-                    "chunk_id": 0,
+                    "title": "Payroll and Pay Practices Handbook",
+                    "section": "How often are salaries paid?",
+                    "category": "Payroll",
+                    "version": "2026.1",
                     "score": 0.87,
-                    "text": "Employees are paid twice per month.",
+                    "excerpt": "Employees are paid twice per month.",
                 }
             ],
         )
 
         self.assertIn('class="chat-row assistant-row"', markup)
         self.assertIn("Sources used", markup)
-        self.assertIn("Payroll_FAQ.md#0", markup)
-        self.assertIn("0.87", markup)
+        self.assertIn("Payroll and Pay Practices Handbook", markup)
+        self.assertIn("How often are salaries paid?", markup)
+        self.assertNotIn("Payroll_FAQ.md#0", markup)
+        self.assertIn("Employees are paid twice per month.", markup)
+        self.assertNotIn("0.87", markup)
 
     def test_build_chat_message_markup_can_render_typing_cursor(self) -> None:
         markup = _build_chat_message_markup(
@@ -123,7 +133,9 @@ class WebUIHelperTests(unittest.TestCase):
         self.assertEqual(client.api_base_url, "http://127.0.0.1:8016")
 
     @patch("web_ui.api_client.requests.Session")
-    def test_demo_api_client_disables_env_proxies_for_loopback_urls(self, session_factory: MagicMock) -> None:
+    def test_demo_api_client_disables_env_proxies_for_loopback_urls(
+        self, session_factory: MagicMock
+    ) -> None:
         session = MagicMock()
         session.request.return_value = object()
         session_factory.return_value = session
@@ -136,7 +148,9 @@ class WebUIHelperTests(unittest.TestCase):
         session.close.assert_called_once()
 
     @patch("web_ui.api_client.requests.Session")
-    def test_demo_api_client_keeps_env_proxies_for_remote_urls(self, session_factory: MagicMock) -> None:
+    def test_demo_api_client_keeps_env_proxies_for_remote_urls(
+        self, session_factory: MagicMock
+    ) -> None:
         session = MagicMock()
         session.request.return_value = object()
         session_factory.return_value = session

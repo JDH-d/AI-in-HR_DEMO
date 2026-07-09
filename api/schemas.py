@@ -18,8 +18,11 @@ class ChatRequest(BaseModel):
 
 class SourceChunk(BaseModel):
     source: str
-    chunk_id: int
-    text: str
+    title: str
+    section: str
+    category: str
+    version: str
+    excerpt: str
     score: float
 
 
@@ -36,4 +39,3 @@ class SystemPromptUpdate(BaseModel):
 
 class WorkflowStatusUpdate(BaseModel):
     status: str = Field(..., min_length=1)
-

@@ -8,7 +8,7 @@
 **Applies To:** All regular California employees, with manager guidance for approved contractors and interns.
 **Purpose:** Define how employees plan vacation, use paid sick leave, request time away, and coordinate absences with managers, payroll, and team coverage.
 **Audience Note:** Primary employee-facing leave policy for the demo environment.
-**Related Documents:** PTO_Vacation_Sick_Leave.docx, Work_Schedules_and_Shifts.md, Payroll_FAQ.md
+**Related Documents:** Work_Schedules_and_Shifts.md, Payroll_FAQ.md
 
 Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
 in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B

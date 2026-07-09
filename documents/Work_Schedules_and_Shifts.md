@@ -8,7 +8,7 @@
 **Applies To:** All employees, with additional rules for non-exempt and shift-based roles.
 **Purpose:** Define working hours, hybrid expectations, timekeeping, overtime approvals, meal and rest breaks, shift coverage, and schedule changes.
 **Audience Note:** Core employee-facing schedule policy for the demo.
-**Related Documents:** Work_Schedules.docx, PTO_Policy.md, IT_Support_and_Access.md
+**Related Documents:** PTO_Policy.md, IT_Support_and_Access.md
 
 Pacific Beacon Software, Inc. is a fictional mid-sized California software company with hybrid teams
 in San Francisco, Oakland, Sacramento, and several remote home offices. The company builds B2B

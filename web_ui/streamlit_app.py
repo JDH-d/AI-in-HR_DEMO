@@ -10,7 +10,6 @@ import requests
 import streamlit as st
 
 from rag.nlp import SUPPORTED_TOPICS
-
 from web_ui.api_client import (
     DemoAPIClient,
     extract_assistant_content,
@@ -26,7 +25,6 @@ from web_ui.demo_prompts import (
     render_demo_prompt_styles,
     render_demo_prompts,
 )
-
 
 MAX_CONTEXT_MESSAGES = 12
 REQUEST_TIMEOUT_SEC = 30
@@ -56,7 +54,7 @@ def _build_messages_payload(history: list[dict], prompt: str) -> list[dict]:
     return payload[-MAX_CONTEXT_MESSAGES:]
 
 
-def _truncate_source_text(text: str, max_chars: int = 150) -> str:
+def _truncate_source_text(text: str, max_chars: int = 360) -> str:
     cleaned = " ".join((text or "").split())
     if len(cleaned) <= max_chars:
         return cleaned
@@ -69,15 +67,18 @@ def _build_sources_markup(sources: list[dict] | None) -> str:
 
     cards: list[str] = []
     for source in sources[:3]:
-        source_name = html.escape(str(source.get("source", "")))
-        chunk_id = source.get("chunk_id", "-")
-        excerpt = html.escape(_truncate_source_text(str(source.get("text", ""))))
+        title = html.escape(str(source.get("title", "")))
+        section = html.escape(str(source.get("section", "")))
+        category = html.escape(str(source.get("category", "")))
+        version = html.escape(str(source.get("version", "")))
+        excerpt = html.escape(_truncate_source_text(str(source.get("excerpt", ""))))
         cards.append(
             (
                 '<div class="source-card">'
                 '<div class="source-card-meta">'
-                f'<span class="source-name">{source_name}#{chunk_id}</span>'
+                f'<span class="source-name">{title}</span>'
                 "</div>"
+                f'<div class="source-detail">{section} · {category} · v{version}</div>'
                 f'<div class="source-text">{excerpt}</div>'
                 "</div>"
             )
@@ -86,7 +87,7 @@ def _build_sources_markup(sources: list[dict] | None) -> str:
     return (
         '<div class="source-block">'
         '<div class="source-block-title">Sources used</div>'
-        f'{"".join(cards)}'
+        f"{''.join(cards)}"
         "</div>"
     )
 
@@ -461,6 +462,12 @@ def main() -> None:
             color: #b7c0cd;
             font-size: 0.9rem;
             line-height: 1.4;
+        }
+
+        .source-detail {
+            color: #8796ad;
+            font-size: 0.78rem;
+            margin-bottom: 6px;
         }
 
         .typing-dots span {

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "documents": {
+    "Access_Policy.md": {
+      "title": "Identity, Access, and Acceptable Use Policy",
+      "category": "IT and Security",
+      "version": "2026.1"
+    },
+    "Benefits_Enrollment_Guide.md": {
+      "title": "Benefits Enrollment Guide",
+      "category": "Benefits",
+      "version": "2026.1"
+    },
+    "IT_Onboarding_Guide.md": {
+      "title": "New Hire IT Onboarding Guide",
+      "category": "IT and Security",
+      "version": "2026.1"
+    },
+    "IT_Support_and_Access.md": {
+      "title": "IT Support and Access Guide",
+      "category": "IT and Security",
+      "version": "2026.1"
+    },
+    "PTO_Policy.md": {
+      "title": "California Leave and Time Away Policy",
+      "category": "Leave and Time Off",
+      "version": "2026.1"
+    },
+    "Payroll_FAQ.md": {
+      "title": "Payroll and Pay Practices Handbook",
+      "category": "Payroll",
+      "version": "2026.1"
+    },
+    "Work_Schedules_and_Shifts.md": {
+      "title": "Work Schedules, Hybrid Work, and Shift Coverage Policy",
+      "category": "Work Schedules",
+      "version": "2026.1"
+    }
+  }
+}

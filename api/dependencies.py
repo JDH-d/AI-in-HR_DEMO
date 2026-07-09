@@ -21,9 +21,7 @@ def require_admin(
         raise HTTPException(status_code=401, detail="Administrator authentication failed.")
 
 
-def _extract_token(
-    x_admin_token: Optional[str], authorization: Optional[str]
-) -> Optional[str]:
+def _extract_token(x_admin_token: Optional[str], authorization: Optional[str]) -> Optional[str]:
     if x_admin_token:
         return x_admin_token.strip()
     if authorization and authorization.lower().startswith("bearer "):

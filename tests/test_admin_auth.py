@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -27,9 +27,12 @@ class AdminAuthTests(unittest.TestCase):
         self.assertIn("system_prompt", response.json())
 
     def test_rebuild_index_returns_clear_service_error(self) -> None:
-        with patch("api.dependencies.ADMIN_TOKEN", "demo-admin-token"), patch(
-            "api.admin_routes.rebuild_index",
-            side_effect=RuntimeError("embedding failure"),
+        with (
+            patch("api.dependencies.ADMIN_TOKEN", "demo-admin-token"),
+            patch(
+                "api.admin_routes.rebuild_index",
+                side_effect=RuntimeError("embedding failure"),
+            ),
         ):
             response = self.client.post(
                 "/admin/rebuild-index",

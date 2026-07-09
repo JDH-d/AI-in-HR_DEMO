@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "pto-advance-notice",
+      "question": "How far in advance should I request vacation?",
+      "expected_source": "PTO_Policy.md",
+      "expected_terms": ["ten business days"]
+    },
+    {
+      "id": "pto-partial-day",
+      "question": "Can I take only half a day of PTO?",
+      "expected_source": "PTO_Policy.md",
+      "expected_terms": ["partial-day"]
+    },
+    {
+      "id": "pto-manager-denial",
+      "question": "Can my manager deny PTO?",
+      "expected_source": "PTO_Policy.md",
+      "expected_terms": ["coverage"]
+    },
+    {
+      "id": "pto-holiday-balance",
+      "question": "Will a company holiday inside my vacation reduce my PTO balance?",
+      "expected_source": "PTO_Policy.md",
+      "expected_terms": ["does not reduce"]
+    },
+    {
+      "id": "pto-balance-error",
+      "question": "Who do I contact when my leave balance is wrong?",
+      "expected_source": "PTO_Policy.md",
+      "expected_terms": ["payroll ticket"]
+    },
+    {
+      "id": "pto-medical-leave",
+      "question": "What should I do if I need an extended medical leave?",
+      "expected_source": "PTO_Policy.md",
+      "expected_terms": ["people operations"]
+    },
+    {
+      "id": "payroll-frequency",
+      "question": "How often are salaries paid?",
+      "expected_source": "Payroll_FAQ.md",
+      "expected_terms": ["semi-monthly", "fifteenth"]
+    },
+    {
+      "id": "payroll-holiday",
+      "question": "What happens when payday falls on a bank holiday?",
+      "expected_source": "Payroll_FAQ.md",
+      "expected_terms": ["prior business day"]
+    },
+    {
+      "id": "payroll-direct-deposit",
+      "question": "When should I change my direct deposit details?",
+      "expected_source": "Payroll_FAQ.md",
+      "expected_terms": ["payroll cutoff"]
+    },
+    {
+      "id": "payroll-payslips",
+      "question": "Where can I find my payslips?",
+      "expected_source": "Payroll_FAQ.md",
+      "expected_terms": ["self-service portal"]
+    },
+    {
+      "id": "payroll-reimbursement",
+      "question": "When will an approved reimbursement appear?",
+      "expected_source": "Payroll_FAQ.md",
+      "expected_terms": ["next feasible payroll"]
+    },
+    {
+      "id": "payroll-incorrect-pay",
+      "question": "What should I do if my pay looks incorrect?",
+      "expected_source": "Payroll_FAQ.md",
+      "expected_terms": ["payroll ticket"]
+    },
+    {
+      "id": "benefits-enrollment",
+      "question": "When can I enroll in benefits?",
+      "expected_source": "Benefits_Enrollment_Guide.md",
+      "expected_terms": ["open enrollment", "qualifying life event"]
+    },
+    {
+      "id": "benefits-deductions",
+      "question": "When do my deductions start?",
+      "expected_source": "Benefits_Enrollment_Guide.md",
+      "expected_terms": ["first payroll cycle"]
+    },
+    {
+      "id": "benefits-dependent",
+      "question": "Can I add a dependent later?",
+      "expected_source": "Benefits_Enrollment_Guide.md",
+      "expected_terms": ["qualifying life event"]
+    },
+    {
+      "id": "benefits-plan-choice",
+      "question": "How do I know which medical plan is best?",
+      "expected_source": "Benefits_Enrollment_Guide.md",
+      "expected_terms": ["provider access", "paycheck cost"]
+    },
+    {
+      "id": "benefits-carrier-missing",
+      "question": "The insurance carrier cannot find my enrollment. What now?",
+      "expected_source": "Benefits_Enrollment_Guide.md",
+      "expected_terms": ["total rewards"]
+    },
+    {
+      "id": "benefits-beneficiaries",
+      "question": "Should I update beneficiaries after a major life change?",
+      "expected_source": "Benefits_Enrollment_Guide.md",
+      "expected_terms": ["beneficiaries"]
+    },
+    {
+      "id": "schedule-change",
+      "question": "Can I change my regular working hours?",
+      "expected_source": "Work_Schedules_and_Shifts.md",
+      "expected_terms": ["team coverage", "manager approval"]
+    },
+    {
+      "id": "schedule-core-hours",
+      "question": "Do remote employees still have core hours?",
+      "expected_source": "Work_Schedules_and_Shifts.md",
+      "expected_terms": ["core hours"]
+    },
+    {
+      "id": "schedule-unapproved-overtime",
+      "question": "What if I work extra hours without prior approval?",
+      "expected_source": "Work_Schedules_and_Shifts.md",
+      "expected_terms": ["record the time"]
+    },
+    {
+      "id": "schedule-shift-swap",
+      "question": "Can coworkers swap shifts without asking anyone?",
+      "expected_source": "Work_Schedules_and_Shifts.md",
+      "expected_terms": ["manager approves"]
+    },
+    {
+      "id": "schedule-onsite",
+      "question": "Who decides whether my role needs to be on site?",
+      "expected_source": "Work_Schedules_and_Shifts.md",
+      "expected_terms": ["department and manager"]
+    },
+    {
+      "id": "schedule-meal-period",
+      "question": "What should I do after missing a meal period because of workload?",
+      "expected_source": "Work_Schedules_and_Shifts.md",
+      "expected_terms": ["tell your manager"]
+    },
+    {
+      "id": "it-vpn-request",
+      "question": "How do I request VPN access?",
+      "expected_source": "IT_Support_and_Access.md",
+      "expected_terms": ["business reason"]
+    },
+    {
+      "id": "it-password-reset",
+      "question": "What should I do if I forget my password?",
+      "expected_source": "IT_Support_and_Access.md",
+      "expected_terms": ["self-service password reset"]
+    },
+    {
+      "id": "it-shared-login",
+      "question": "Can a coworker temporarily share their login with me?",
+      "expected_source": "IT_Support_and_Access.md",
+      "expected_terms": ["shared credentials are prohibited"]
+    },
+    {
+      "id": "it-software-approval",
+      "question": "How are software requests approved?",
+      "expected_source": "IT_Support_and_Access.md",
+      "expected_terms": ["role need", "licensing"]
+    },
+    {
+      "id": "it-priority",
+      "question": "What makes an IT ticket high priority?",
+      "expected_source": "IT_Support_and_Access.md",
+      "expected_terms": ["blocks work"]
+    },
+    {
+      "id": "it-lost-laptop",
+      "question": "What should I do if my laptop is lost?",
+      "expected_source": "IT_Support_and_Access.md",
+      "expected_terms": ["report it immediately", "remote protection"]
+    },
+    {
+      "id": "onboarding-start",
+      "question": "When should IT begin preparing equipment for a new hire?",
+      "expected_source": "IT_Onboarding_Guide.md",
+      "expected_terms": ["start date"]
+    },
+    {
+      "id": "onboarding-day-one",
+      "question": "What should be working on Day One?",
+      "expected_source": "IT_Onboarding_Guide.md",
+      "expected_terms": ["mfa", "email"]
+    },
+    {
+      "id": "onboarding-all-apps",
+      "question": "Must every application be provisioned before the start date?",
+      "expected_source": "IT_Onboarding_Guide.md",
+      "expected_terms": ["some can", "activation timing"]
+    },
+    {
+      "id": "onboarding-role-bundle",
+      "question": "Who determines the application bundle for a new employee?",
+      "expected_source": "IT_Onboarding_Guide.md",
+      "expected_terms": ["role", "department"]
+    },
+    {
+      "id": "onboarding-hardware-delay",
+      "question": "What if hardware does not arrive on time?",
+      "expected_source": "IT_Onboarding_Guide.md",
+      "expected_terms": ["backup"]
+    },
+    {
+      "id": "onboarding-personal-device",
+      "question": "Should a new hire use a personal laptop while waiting?",
+      "expected_source": "IT_Onboarding_Guide.md",
+      "expected_terms": ["approved"]
+    },
+    {
+      "id": "access-least-privilege",
+      "question": "What does least privilege mean for an employee?",
+      "expected_source": "Access_Policy.md",
+      "expected_terms": ["only the access needed"]
+    },
+    {
+      "id": "access-manager-approval",
+      "question": "Can a manager approve any system permission they want?",
+      "expected_source": "Access_Policy.md",
+      "expected_terms": ["system owners", "security controls"]
+    },
+    {
+      "id": "access-shared-credentials",
+      "question": "Are shared credentials ever allowed?",
+      "expected_source": "Access_Policy.md",
+      "expected_terms": ["rare approved scenarios"]
+    },
+    {
+      "id": "access-temporary-expiry",
+      "question": "When should temporary elevated access expire?",
+      "expected_source": "Access_Policy.md",
+      "expected_terms": ["task ends", "review date"]
+    },
+    {
+      "id": "access-reviews",
+      "question": "Why are access reviews necessary?",
+      "expected_source": "Access_Policy.md",
+      "expected_terms": ["roles change", "projects end"]
+    },
+    {
+      "id": "access-overprovisioned",
+      "question": "What should I do if I think I have too much access?",
+      "expected_source": "Access_Policy.md",
+      "expected_terms": ["report it"]
+    }
+  ]
+}

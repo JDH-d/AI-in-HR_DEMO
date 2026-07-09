@@ -1,16 +1,27 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import re
 from pathlib import Path
 from typing import TypedDict
 
+from core.settings import SUPPORTED_DOC_EXTENSIONS
 
 logger = logging.getLogger(__name__)
+
+CATALOG_FILE_NAME = "catalog.json"
 
 
 class DocumentRecord(TypedDict):
     source: str
+    document_id: str
+    title: str
+    category: str
+    version: str
     text: str
+    content_hash: str
 
 
 def read_document(path: Path) -> str:
@@ -22,7 +33,9 @@ def read_document(path: Path) -> str:
             try:
                 from docx import Document
             except ImportError:
-                logger.warning("Skipping DOCX document because python-docx is not installed: %s", path)
+                logger.warning(
+                    "Skipping DOCX document because python-docx is not installed: %s", path
+                )
                 return ""
             doc = Document(str(path))
             return "\n".join(p.text for p in doc.paragraphs if p.text)
@@ -40,16 +53,80 @@ def read_document(path: Path) -> str:
     return ""
 
 
+def load_document_catalog(folder: Path) -> dict[str, dict[str, str]]:
+    path = folder / CATALOG_FILE_NAME
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Ignoring invalid document catalog %s: %s", path, exc)
+        return {}
+
+    documents = payload.get("documents", {})
+    if not isinstance(documents, dict):
+        logger.warning("Ignoring document catalog with invalid documents mapping: %s", path)
+        return {}
+    return {
+        str(source): {
+            "title": str(metadata.get("title", "")).strip(),
+            "category": str(metadata.get("category", "")).strip(),
+            "version": str(metadata.get("version", "")).strip(),
+        }
+        for source, metadata in documents.items()
+        if isinstance(metadata, dict)
+    }
+
+
 def load_documents(folder: Path) -> list[DocumentRecord]:
     if not folder.is_dir():
         return []
 
+    catalog = load_document_catalog(folder)
     docs: list[DocumentRecord] = []
-    for path in folder.rglob("*"):
-        if not path.is_file():
+    seen_hashes: dict[str, str] = {}
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED_DOC_EXTENSIONS:
             continue
-        text = read_document(path)
+        text = read_document(path).strip()
         if not text:
             continue
-        docs.append({"source": path.relative_to(folder).as_posix(), "text": text})
+
+        source = path.relative_to(folder).as_posix()
+        content_hash = _content_hash(text)
+        duplicate_source = seen_hashes.get(content_hash)
+        if duplicate_source:
+            logger.warning(
+                "Skipping duplicate document source=%s duplicate_of=%s",
+                source,
+                duplicate_source,
+            )
+            continue
+        seen_hashes[content_hash] = source
+
+        metadata = catalog.get(source, {})
+        docs.append(
+            {
+                "source": source,
+                "document_id": Path(source).stem.lower().replace("_", "-"),
+                "title": metadata.get("title") or _extract_title(text, Path(source).stem),
+                "category": metadata.get("category") or "General",
+                "version": metadata.get("version") or "unversioned",
+                "text": text,
+                "content_hash": content_hash,
+            }
+        )
     return docs
+
+
+def _extract_title(text: str, fallback: str) -> str:
+    for line in text.splitlines():
+        heading = re.match(r"^##\s+(.+?)\s*$", line)
+        if heading:
+            return heading.group(1).strip()
+    return fallback.replace("_", " ").strip()
+
+
+def _content_hash(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip().lower()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
