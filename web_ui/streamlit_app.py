@@ -14,6 +14,7 @@ from web_ui.api_client import (
     DemoAPIClient,
     extract_assistant_content,
     extract_assistant_sources,
+    extract_workflow_request,
     format_http_error,
     safe_json,
 )
@@ -260,6 +261,83 @@ def _initialize_state() -> None:
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+
+def _render_workflow_confirmation(
+    request: dict,
+    message: dict,
+    message_index: int,
+    api_client: DemoAPIClient,
+    user_id: str | None,
+) -> None:
+    request_id = str(request.get("id", ""))
+    status = str(request.get("status", "draft"))
+    with st.container(border=True):
+        st.markdown(f"**Request draft · `{request_id[:10]}`**")
+        if status != "draft":
+            st.caption(f"Status: {status}")
+            return
+
+        errors = request.get("validation_errors") or []
+        if errors:
+            st.warning(" ".join(str(error) for error in errors))
+
+        with st.form(key=f"workflow-confirm-{request_id}"):
+            request_type = st.selectbox(
+                "Type",
+                options=["pto", "sick_leave", "document"],
+                index=["pto", "sick_leave", "document"].index(
+                    request.get("type")
+                    if request.get("type") in {"pto", "sick_leave", "document"}
+                    else "pto"
+                ),
+            )
+            start_date = st.text_input(
+                "Start date (YYYY-MM-DD)",
+                value=str(request.get("start_date") or ""),
+            )
+            end_date = st.text_input(
+                "End date (YYYY-MM-DD)",
+                value=str(request.get("end_date") or ""),
+            )
+            comment = st.text_area("Comment", value=str(request.get("comment") or ""))
+            approver = st.text_input("Approver", value=str(request.get("approver") or "Manager"))
+            confirm = st.form_submit_button("Confirm and submit", type="primary")
+            cancel = st.form_submit_button("Cancel draft")
+
+        try:
+            if confirm:
+                response = api_client.confirm_request(
+                    request_id,
+                    {
+                        "type": request_type,
+                        "start_date": start_date or None,
+                        "end_date": end_date or None,
+                        "comment": comment,
+                        "approver": approver,
+                    },
+                    user_id,
+                )
+                data = safe_json(response)
+                if response.status_code == 200 and isinstance(data, dict):
+                    message["workflow_request"] = data.get("request")
+                    message["content"] = "Request confirmed and submitted for review."
+                    st.session_state.messages[message_index] = message
+                    st.rerun()
+                st.error(format_http_error(response, data))
+            elif cancel:
+                response = api_client.cancel_request(
+                    request_id, "Cancelled before submission", user_id
+                )
+                data = safe_json(response)
+                if response.status_code == 200 and isinstance(data, dict):
+                    message["workflow_request"] = data.get("request")
+                    message["content"] = "Request draft cancelled."
+                    st.session_state.messages[message_index] = message
+                    st.rerun()
+                st.error(format_http_error(response, data))
+        except requests.RequestException as exc:
+            st.error(f"Unable to update the request: {exc}")
 
 
 def _handle_composer_action(action: ComposerAction) -> None:
@@ -581,7 +659,55 @@ def main() -> None:
                 _fetch_requests()
                 data = st.session_state.get("user_requests", [])
                 if data:
-                    st.dataframe(data, width="stretch", height=520)
+                    for request in data:
+                        request_id = str(request.get("id", ""))
+                        status = str(request.get("status", ""))
+                        with st.expander(
+                            f"{request.get('type_label', request.get('type', 'Request'))} · {status}"
+                        ):
+                            st.write(
+                                {
+                                    "dates": (
+                                        request.get("start_date"),
+                                        request.get("end_date"),
+                                    ),
+                                    "duration_days": request.get("duration_days"),
+                                    "approver": request.get("approver"),
+                                    "comment": request.get("comment"),
+                                    "created_at": request.get("created_at"),
+                                }
+                            )
+                            if status in {"draft", "submitted", "in_review"}:
+                                if st.button(
+                                    "Cancel request",
+                                    key=f"cancel-list-{request_id}",
+                                ):
+                                    response = api_client.cancel_request(
+                                        request_id,
+                                        "Cancelled by applicant",
+                                        active_user_id,
+                                    )
+                                    response_data = safe_json(response)
+                                    if response.status_code == 200:
+                                        st.success("Request cancelled.")
+                                        st.rerun()
+                                    st.error(format_http_error(response, response_data))
+                            if st.button("Show history", key=f"user-history-{request_id}"):
+                                response = api_client.request_history(
+                                    request_id,
+                                    active_user_id,
+                                )
+                                response_data = safe_json(response)
+                                if response.status_code == 200 and isinstance(response_data, dict):
+                                    st.session_state[f"user-history-data-{request_id}"] = (
+                                        response_data
+                                    )
+                                else:
+                                    st.error(format_http_error(response, response_data))
+                            history = st.session_state.get(f"user-history-data-{request_id}")
+                            if history:
+                                st.dataframe(history.get("events", []), width="stretch")
+                                st.dataframe(history.get("comments", []), width="stretch")
                 else:
                     st.caption("No workflow requests are available for this user.")
                 if st.button("Close Panel"):
@@ -606,13 +732,22 @@ def main() -> None:
         if not st.session_state.messages and not queued_prompt:
             _render_empty_state()
 
-    for msg in st.session_state.messages:
+    for message_index, msg in enumerate(st.session_state.messages):
         with chat_area:
             role = msg.get("role", "assistant")
             content = msg.get("content", "")
             avatar_data = bot_avatar_data if role == "assistant" else user_avatar_data
             sources = msg.get("sources") if role == "assistant" else None
             _render_chat_message(role, content, avatar_data, sources=sources)
+            workflow_request = msg.get("workflow_request") if role == "assistant" else None
+            if isinstance(workflow_request, dict):
+                _render_workflow_confirmation(
+                    workflow_request,
+                    msg,
+                    message_index,
+                    api_client,
+                    active_user_id,
+                )
 
     response_placeholder = None
     with chat_area:
@@ -636,6 +771,7 @@ def main() -> None:
     # Keep a single submit path at the end of the run.
     if request_in_flight and queued_prompt and response_placeholder is not None:
         payload_messages = _build_messages_payload(st.session_state.messages, queued_prompt)
+        assistant_workflow = None
 
         try:
             resp = api_client.chat(payload_messages, active_user_id)
@@ -646,27 +782,31 @@ def main() -> None:
             else:
                 assistant_content = extract_assistant_content(data)
                 assistant_sources = extract_assistant_sources(data)
+                assistant_workflow = extract_workflow_request(data)
                 if not assistant_content:
                     assistant_content = (
                         "The assistant returned an unexpected response format. "
                         "Please retry or restart the demo services with run_demo.ps1."
                     )
                     assistant_sources = []
+                    assistant_workflow = None
         except requests.RequestException as exc:
             assistant_content = (
                 f"The assistant service is currently unavailable: {exc}. "
                 "Please start the demo services with run_demo.ps1 and try again."
             )
             assistant_sources = []
+            assistant_workflow = None
 
         st.session_state.messages.append({"role": "user", "content": queued_prompt})
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": assistant_content,
-                "sources": assistant_sources,
-            }
-        )
+        assistant_message = {
+            "role": "assistant",
+            "content": assistant_content,
+            "sources": assistant_sources,
+        }
+        if assistant_workflow is not None:
+            assistant_message["workflow_request"] = assistant_workflow
+        st.session_state.messages.append(assistant_message)
         st.session_state.queued_prompt = ""
         st.session_state.request_in_flight = False
 

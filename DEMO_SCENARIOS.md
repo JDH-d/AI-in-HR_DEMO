@@ -5,8 +5,9 @@
 2. Select: `1` or `PTO`
 3. Ask: `How far in advance should I request vacation?`
 4. Ask: `Can I request partial-day PTO?`
-5. Create a request: `I need vacation from 04/10 to 04/12`
-6. Confirm that the assistant creates a workflow request and returns the request ID.
+5. Prepare a request: `I need vacation from 2030-04-10 to 2030-04-12`
+6. Review the extracted fields and click **Confirm and submit**.
+7. Open **My Requests** and show the status history.
 
 ## Manager Flow
 1. Ask: `How do schedule changes work?`
@@ -20,10 +21,11 @@
 3. Refresh the document list.
 4. Rebuild the vector index after a document change.
 5. Load logs and show that user text can be masked.
-6. Load workflow requests and update one request status from `pending` to `approved`.
+6. Load workflow requests and move one from `submitted` to `in_review`.
+7. Add a manager comment, then approve it and show the event history.
 
 ## Suggested Narrative
 - Start with employee self-service.
 - Show policy-grounded answers rather than generic LLM output.
-- Transition into workflow creation.
-- End with administration and auditability.
+- Transition into draft preparation and explicit confirmation.
+- End with protected manager transitions and auditability.

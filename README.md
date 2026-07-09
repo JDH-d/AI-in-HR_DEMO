@@ -124,28 +124,29 @@ The app reads configuration from environment variables via `.env`.
 
 ## How It Works
 - The employee UI sends chat messages to the FastAPI backend.
-- `ChatService` routes the request through intent detection, workflow creation, or retrieval-backed answering.
+- `ChatService` routes the request through intent detection, workflow draft preparation, or retrieval-backed answering.
 - The RAG layer builds or loads a local document index and retrieves relevant chunks from `documents/`.
 - The assistant generates a concise answer using the retrieved context and returns section-aware citations.
-- Workflow-style messages can create SQLite-backed requests.
-- The admin UI can inspect logs, update prompts, manage documents, rebuild the index, and update request statuses.
+- Explicit action messages prepare an editable SQLite-backed draft; submission always requires confirmation.
+- Workflow transitions are protected and every status change is stored in an audit history.
+- The admin UI can inspect logs, update prompts, manage documents, rebuild the index, review requests, add manager comments, and apply valid status transitions.
 
-## xample Questions
+## Example Questions
 - What can you help with?
 - How often are salaries paid?
 - How far in advance should I request vacation?
 - Can I request partial-day PTO?
 - How do I request VPN access?
-- I need vacation from 04/10 to 04/12
+- I need vacation from 2030-04-10 to 2030-04-12
 
 ## Demo Flow
 1. Open the employee chat.
 2. Ask what the assistant can help with.
 3. Ask a policy question about payroll, benefits, schedules, VPN access, or PTO.
 4. Ask a follow-up question and show that context is preserved.
-5. Create a workflow request.
-6. Open the admin console and review the created request.
-7. Show document management, logs, prompt configuration, or index rebuild.
+5. Prepare a workflow draft, review the extracted dates, and confirm it.
+6. Open the admin console, move the request into review, and add a manager comment.
+7. Show the request history, document management, logs, prompt configuration, or index rebuild.
 
 Detailed scripts are available in [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md).
 
@@ -194,7 +195,8 @@ Before a live demo, run the smoke check:
 powershell -ExecutionPolicy Bypass -File .\smoke_check.ps1
 ```
 
-The smoke check validates unit tests, the deterministic RAG evaluation, API health, a core chat flow, workflow creation, and admin authentication.
+The smoke check validates unit tests, the deterministic RAG evaluation, API health,
+draft confirmation, a protected manager transition, and admin authentication.
 
 ## API-Only Docker Run
 ```powershell
@@ -214,6 +216,7 @@ The Docker target is intentionally API-only. The Streamlit apps are local presen
 ## Privacy & Data Handling
 - Source documents are stored locally in `documents/`.
 - Workflow requests are stored in SQLite.
+- Workflow audit events, manager comments, users, and feedback are stored in the same local database.
 - Chat logs are written to JSONL and can mask, store, or omit user text via `LOG_USER_TEXT_MODE`.
 - When using OpenAI models, user questions and retrieved excerpts may be sent to the OpenAI API.
 - Do not use sensitive production data in this MVP unless your data handling policies allow it.

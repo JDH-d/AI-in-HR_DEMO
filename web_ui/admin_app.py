@@ -9,6 +9,15 @@ import streamlit as st
 from .api_client import DemoAPIClient
 
 ENV_ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+WORKFLOW_TRANSITIONS = {
+    "draft": [],
+    "submitted": ["in_review"],
+    "in_review": ["approved", "declined"],
+    "approved": ["completed"],
+    "declined": [],
+    "completed": [],
+    "cancelled": [],
+}
 
 
 def main() -> None:
@@ -171,40 +180,77 @@ def main() -> None:
 
     workflow_requests = st.session_state.get("workflow_requests", [])
     if workflow_requests:
-        st.caption("Select a new status and click Update to persist the change.")
+        st.caption("Only valid state-machine transitions are available.")
         for req in workflow_requests:
-            status_options = ["new", "pending", "approved", "declined", "done"]
-            current_status = (req.get("status") or "pending").lower()
-            status_index = (
-                status_options.index(current_status) if current_status in status_options else 1
-            )
-            cols = st.columns([2, 1, 1, 1, 2, 1, 1])
-            cols[0].write(req.get("id", ""))
-            cols[1].write(req.get("type", ""))
-            cols[2].write(req.get("created_by", ""))
-            cols[3].write(req.get("status", ""))
-            cols[4].write(req.get("created_at", ""))
-            new_status = cols[5].selectbox(
-                "Status",
-                options=status_options,
-                index=status_index,
-                key=f"status-{req.get('id', '')}",
-                label_visibility="collapsed",
-            )
-            if cols[6].button("Update", key=f"update-{req.get('id', '')}"):
-                resp = _admin_request(
-                    api_client,
-                    "PUT",
-                    f"/admin/requests/{req.get('id', '')}/status",
-                    token,
-                    json={"status": new_status},
+            request_id = req.get("id", "")
+            current_status = (req.get("status") or "draft").lower()
+            with st.expander(
+                f"{req.get('type_label', req.get('type', 'Request'))} · "
+                f"{req.get('applicant', '')} · {current_status}"
+            ):
+                st.json(req)
+                transitions = WORKFLOW_TRANSITIONS.get(current_status, [])
+                if transitions:
+                    new_status = st.selectbox(
+                        "Next status",
+                        options=transitions,
+                        key=f"status-{request_id}",
+                    )
+                    transition_comment = st.text_input(
+                        "Transition note",
+                        key=f"transition-comment-{request_id}",
+                    )
+                    if st.button("Apply transition", key=f"update-{request_id}"):
+                        resp = _admin_request(
+                            api_client,
+                            "PUT",
+                            f"/admin/requests/{request_id}/status",
+                            token,
+                            json={"status": new_status, "comment": transition_comment},
+                        )
+                        if resp is not None and resp.status_code == 200:
+                            st.success(f"Workflow request updated: {request_id}")
+                            req["status"] = new_status
+                            st.rerun()
+                        elif resp is not None:
+                            st.error(f"Workflow update failed: {resp.status_code} {resp.text}")
+                else:
+                    st.caption("No manager transition is available from this status.")
+
+                manager_comment = st.text_input(
+                    "Manager comment",
+                    key=f"manager-comment-{request_id}",
                 )
-                if resp is not None:
-                    if resp.status_code == 200:
-                        st.success(f"Workflow request updated: {req.get('id', '')}")
-                        req["status"] = new_status
-                    else:
-                        st.error(f"Workflow update failed: {resp.status_code} {resp.text}")
+                if st.button("Add comment", key=f"add-comment-{request_id}"):
+                    resp = _admin_request(
+                        api_client,
+                        "POST",
+                        f"/admin/requests/{request_id}/comments",
+                        token,
+                        json={"author": "Manager", "body": manager_comment},
+                    )
+                    if resp is not None and resp.status_code == 200:
+                        st.success("Manager comment added.")
+                    elif resp is not None:
+                        st.error(f"Comment failed: {resp.status_code} {resp.text}")
+
+                if st.button("Load history", key=f"history-button-{request_id}"):
+                    resp = _admin_request(
+                        api_client,
+                        "GET",
+                        f"/admin/requests/{request_id}/history",
+                        token,
+                    )
+                    if resp is not None and resp.status_code == 200:
+                        st.session_state[f"history-{request_id}"] = resp.json()
+                    elif resp is not None:
+                        st.error(f"History failed: {resp.status_code} {resp.text}")
+                history = st.session_state.get(f"history-{request_id}")
+                if history:
+                    st.markdown("**Status history**")
+                    st.dataframe(history.get("events", []), width="stretch")
+                    st.markdown("**Comments**")
+                    st.dataframe(history.get("comments", []), width="stretch")
     else:
         st.caption("No workflow requests are available.")
 

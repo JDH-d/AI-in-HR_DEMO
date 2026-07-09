@@ -99,11 +99,22 @@ def extract_assistant_sources(data: object) -> list[dict]:
     return normalized
 
 
+def extract_workflow_request(data: object) -> dict | None:
+    if not isinstance(data, dict):
+        return None
+    request = data.get("workflow_request")
+    if not isinstance(request, dict) or not str(request.get("id", "")).strip():
+        return None
+    return dict(request)
+
+
 def format_http_error(response: requests.Response, data: object | None) -> str:
     detail = ""
     if isinstance(data, dict):
         if isinstance(data.get("detail"), str):
             detail = data["detail"].strip()
+        elif isinstance(data.get("detail"), list):
+            detail = " ".join(str(item) for item in data["detail"])
         elif isinstance(data.get("message"), str):
             detail = data["message"].strip()
     if not detail:
@@ -154,6 +165,47 @@ class DemoAPIClient:
         if user_id:
             headers["X-User"] = user_id
         return self.request("GET", "/requests", headers=headers)
+
+    def confirm_request(
+        self,
+        request_id: str,
+        fields: dict,
+        user_id: str | None = None,
+    ) -> requests.Response:
+        return self.request(
+            "POST",
+            f"/requests/{request_id}/confirm",
+            headers=self._user_headers(user_id),
+            json=fields,
+        )
+
+    def cancel_request(
+        self,
+        request_id: str,
+        comment: str = "",
+        user_id: str | None = None,
+    ) -> requests.Response:
+        return self.request(
+            "POST",
+            f"/requests/{request_id}/cancel",
+            headers=self._user_headers(user_id),
+            json={"comment": comment},
+        )
+
+    def request_history(
+        self,
+        request_id: str,
+        user_id: str | None = None,
+    ) -> requests.Response:
+        return self.request(
+            "GET",
+            f"/requests/{request_id}/history",
+            headers=self._user_headers(user_id),
+        )
+
+    @staticmethod
+    def _user_headers(user_id: str | None) -> dict:
+        return {"X-User": user_id} if user_id else {}
 
     def admin_request(
         self, method: str, path: str, token: str | None, **kwargs

@@ -66,14 +66,23 @@ try {
         messages = @(
             @{
                 role = "user"
-                content = "I need vacation from 01/04 to 03/04"
+                content = "I need vacation from 2030-04-01 to 2030-04-03"
             }
         )
     } | ConvertTo-Json -Depth 5
 
     $workflow = Invoke-RestMethod -Uri "http://127.0.0.1:8011/chat" -Method Post -ContentType "application/json" -Headers @{ "X-User" = "demo-user" } -Body $workflowBody -TimeoutSec 10
-    if ($workflow.message.content -notlike "Request created successfully. ID:*") {
-        throw "Workflow flow did not create a request."
+    if ($workflow.workflow_request.status -ne "draft") {
+        throw "Workflow flow did not create a confirmation draft."
+    }
+
+    $requestId = $workflow.workflow_request.id
+    $confirmationBody = @{
+        comment = "Confirmed by smoke test"
+    } | ConvertTo-Json
+    $confirmed = Invoke-RestMethod -Uri "http://127.0.0.1:8011/requests/$requestId/confirm" -Method Post -ContentType "application/json" -Headers @{ "X-User" = "demo-user" } -Body $confirmationBody -TimeoutSec 10
+    if ($confirmed.request.status -ne "submitted") {
+        throw "Workflow confirmation did not submit the draft."
     }
 
     $unauthorized = $null
@@ -90,6 +99,15 @@ try {
     $authorized = Invoke-RestMethod -Uri "http://127.0.0.1:8011/admin/system-prompt" -Method Get -Headers @{ "Authorization" = "Bearer demo-admin-token" } -TimeoutSec 10
     if (-not $authorized.system_prompt) {
         throw "Admin auth flow did not return system prompt."
+    }
+
+    $reviewBody = @{
+        status = "in_review"
+        comment = "Smoke review"
+    } | ConvertTo-Json
+    $reviewed = Invoke-RestMethod -Uri "http://127.0.0.1:8011/admin/requests/$requestId/status" -Method Put -ContentType "application/json" -Headers @{ "Authorization" = "Bearer demo-admin-token" } -Body $reviewBody -TimeoutSec 10
+    if ($reviewed.request.status -ne "in_review") {
+        throw "Workflow state transition did not enter review."
     }
 
     Write-Output "Smoke check passed."

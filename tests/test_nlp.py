@@ -6,7 +6,7 @@ from web_ui.streamlit_app import DEMO_PROMPTS
 
 class NLPDetectionTests(unittest.TestCase):
     def test_vacation_request_is_not_topic_selection(self) -> None:
-        self.assertIsNone(detect_topic_selection("I need vacation from 01/04 to 03/04"))
+        self.assertIsNone(detect_topic_selection("I need vacation from 2030-04-01 to 2030-04-03"))
 
     def test_short_topic_alias_is_topic_selection(self) -> None:
         self.assertEqual(

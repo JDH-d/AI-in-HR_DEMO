@@ -49,8 +49,14 @@ class ChatFallbackPolicy:
         )
 
     @staticmethod
-    def workflow_created(request_id: str, status: str) -> str:
-        return f"Request created successfully. ID: {request_id}; status: {status}."
+    def workflow_draft(request_id: str, validation_errors: list[str]) -> str:
+        message = (
+            f"I prepared request draft {request_id}. "
+            "Review the extracted fields and confirm before it is submitted."
+        )
+        if validation_errors:
+            message += " Please correct the highlighted fields before confirmation."
+        return message
 
     @staticmethod
     def _format_topic_examples(topic: str) -> str:

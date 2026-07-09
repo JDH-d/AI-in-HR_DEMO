@@ -56,3 +56,4 @@ class ChatOutcome:
     intent: Intent
     language: str
     sources: list[RetrievedChunk] = field(default_factory=list)
+    workflow_request: dict | None = None

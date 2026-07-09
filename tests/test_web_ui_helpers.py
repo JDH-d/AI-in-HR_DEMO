@@ -2,7 +2,11 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
-from web_ui.api_client import DemoAPIClient, extract_assistant_sources
+from web_ui.api_client import (
+    DemoAPIClient,
+    extract_assistant_sources,
+    extract_workflow_request,
+)
 from web_ui.demo_prompts import DEMO_PROMPTS, iter_demo_prompts
 from web_ui.streamlit_app import (
     MAX_CONTEXT_MESSAGES,
@@ -40,6 +44,24 @@ class WebUIHelperTests(unittest.TestCase):
     def test_extract_assistant_sources_ignores_invalid_payload(self) -> None:
         sources = extract_assistant_sources({"message": {"content": "Hello"}})
         self.assertEqual(sources, [])
+
+    def test_extract_workflow_request_reads_draft(self) -> None:
+        request = extract_workflow_request(
+            {
+                "workflow_request": {
+                    "id": "request-1",
+                    "type": "pto",
+                    "status": "draft",
+                }
+            }
+        )
+
+        self.assertIsNotNone(request)
+        assert request is not None
+        self.assertEqual(request["status"], "draft")
+
+    def test_extract_workflow_request_ignores_invalid_payload(self) -> None:
+        self.assertIsNone(extract_workflow_request({"workflow_request": {}}))
 
     def test_build_messages_payload_keeps_latest_valid_turns(self) -> None:
         history = []

@@ -20,7 +20,7 @@ DEMO_PROMPTS = [
             "How far in advance should I request vacation?",
             "Can I request half-day PTO?",
             "Do company holidays reduce my PTO balance?",
-            "I need vacation from 04/10 to 04/12",
+            "I need vacation from 2030-04-10 to 2030-04-12",
         ],
     ),
     (

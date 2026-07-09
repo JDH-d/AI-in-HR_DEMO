@@ -90,7 +90,12 @@ class ChatServiceTests(unittest.TestCase):
 
     def test_workflow_request_takes_priority_over_topic_selection(self) -> None:
         request = ChatRequest(
-            messages=[Message(role="user", content="I need vacation from 01/04 to 03/04")]
+            messages=[
+                Message(
+                    role="user",
+                    content="I need vacation from 2030-04-01 to 2030-04-03",
+                )
+            ]
         )
 
         with (
@@ -114,8 +119,19 @@ class ChatServiceTests(unittest.TestCase):
             response = self.service.handle_chat(request, created_by="demo-user")
 
         self.assertEqual(response.intent, "work")
-        self.assertIn("Request created successfully. ID:", response.message.content)
+        self.assertIn("I prepared request draft", response.message.content)
+        self.assertIsNotNone(response.workflow_request)
+        assert response.workflow_request is not None
+        self.assertEqual(response.workflow_request.status, "draft")
         generate_with_fallback.assert_not_called()
+
+    def test_policy_question_does_not_create_workflow_draft(self) -> None:
+        request = ChatRequest(messages=[Message(role="user", content="How do I request vacation?")])
+
+        response = self.service.handle_chat(request, created_by="demo-user")
+
+        self.assertIsNone(response.workflow_request)
+        self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
 
     def test_explicit_topic_selection_returns_guided_response(self) -> None:
         request = ChatRequest(messages=[Message(role="user", content="2")])

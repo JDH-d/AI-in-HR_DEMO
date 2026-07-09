@@ -63,6 +63,7 @@ class ChatService:
                 )
                 for source in outcome.sources
             ],
+            workflow_request=outcome.workflow_request,
         )
 
     def respond(self, query: ChatQuery, created_by: str) -> ChatOutcome:
@@ -87,18 +88,19 @@ class ChatService:
         latest_user = query.latest_user_message
         assert latest_user is not None
 
-        workflow_request = self.workflow_service.try_create(
+        workflow_request = self.workflow_service.prepare_draft(
             latest_user.content,
-            created_by=created_by,
+            applicant=created_by,
         )
         if workflow_request:
             return ChatOutcome(
-                content=self.fallback_policy.workflow_created(
+                content=self.fallback_policy.workflow_draft(
                     workflow_request["id"],
-                    workflow_request["status"],
+                    workflow_request.get("validation_errors", []),
                 ),
                 intent=Intent.WORK,
                 language=decision.language,
+                workflow_request=workflow_request,
             )
 
         if decision.intent == Intent.CAPABILITIES:

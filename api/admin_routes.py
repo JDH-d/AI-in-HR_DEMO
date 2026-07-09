@@ -5,11 +5,15 @@ import logging
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from api.dependencies import require_admin
-from api.schemas import SystemPromptUpdate, WorkflowStatusUpdate
+from api.schemas import SystemPromptUpdate, WorkflowCommentCreate, WorkflowStatusUpdate
 from rag.index import rebuild_index
 from rag.prompts import load_system_prompt, save_system_prompt
 from services.runtime import document_service, log_service, workflow_service
-from workflow import VALID_STATUSES
+from workflow import (
+    InvalidTransitionError,
+    WorkflowNotFoundError,
+    WorkflowValidationError,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -74,12 +78,44 @@ def admin_update_request_status(
     payload: WorkflowStatusUpdate,
     _: None = Depends(require_admin),
 ) -> dict:
-    status = payload.status.strip().lower()
-    if status not in VALID_STATUSES:
-        raise HTTPException(
-            status_code=400, detail="The requested workflow status is not supported."
+    try:
+        updated = workflow_service.transition(
+            request_id,
+            payload.status,
+            actor="admin",
+            comment=payload.comment,
         )
-    updated = workflow_service.update_status(request_id, status)
-    if not updated:
-        raise HTTPException(status_code=404, detail="The workflow request could not be found.")
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "ok", "request": updated}
+
+
+@router.get("/admin/requests/{request_id}/history")
+def admin_request_history(request_id: str, _: None = Depends(require_admin)) -> dict:
+    try:
+        return workflow_service.history(request_id)
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/admin/requests/{request_id}/comments")
+def admin_add_request_comment(
+    request_id: str,
+    payload: WorkflowCommentCreate,
+    _: None = Depends(require_admin),
+) -> dict:
+    try:
+        comment = workflow_service.add_manager_comment(
+            request_id,
+            payload.author.strip() or "Manager",
+            payload.body,
+        )
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "ok", "comment": comment}
