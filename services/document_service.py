@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 from datetime import datetime, timezone
@@ -15,8 +17,15 @@ from .document_reader import load_documents
 
 
 class DocumentService:
-    def __init__(self, documents_dir: Path) -> None:
+    def __init__(
+        self,
+        documents_dir: Path,
+        index_path: Path | None = None,
+        index_status_path: Path | None = None,
+    ) -> None:
         self.documents_dir = documents_dir
+        self.index_path = index_path
+        self.index_status_path = index_status_path
 
     def list_documents(self) -> List[dict]:
         if not self.documents_dir.is_dir():
@@ -25,6 +34,8 @@ class DocumentService:
         metadata_by_source = {
             document["source"]: document for document in load_documents(self.documents_dir)
         }
+        index_metadata = self._read_index_metadata()
+        recorded_statuses = self._read_index_statuses()
         docs: List[dict] = []
         for root, _, files in os.walk(self.documents_dir):
             for name in files:
@@ -34,8 +45,12 @@ class DocumentService:
                 rel = path.relative_to(self.documents_dir).as_posix()
                 stats = path.stat()
                 metadata = metadata_by_source.get(rel, {})
+                document_id = self.document_id(rel)
+                indexed = index_metadata.get(rel, {})
+                recorded = recorded_statuses.get(document_id, {})
                 docs.append(
                     {
+                        "id": document_id,
                         "name": rel,
                         "title": metadata.get("title", path.stem.replace("_", " ")),
                         "category": metadata.get("category", "General"),
@@ -44,10 +59,82 @@ class DocumentService:
                         "modified": datetime.fromtimestamp(
                             stats.st_mtime, timezone.utc
                         ).isoformat(),
+                        "index_status": recorded.get(
+                            "status",
+                            "indexed" if indexed.get("chunk_count", 0) else "pending",
+                        ),
+                        "chunk_count": indexed.get("chunk_count", 0),
+                        "indexed_at": recorded.get("updated_at") or indexed.get("indexed_at"),
+                        "index_error": recorded.get("error"),
                     }
                 )
         docs.sort(key=lambda item: item["name"])
         return docs
+
+    @staticmethod
+    def document_id(name: str) -> str:
+        return hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
+
+    def find_by_id(self, document_id: str) -> dict | None:
+        return next(
+            (document for document in self.list_documents() if document["id"] == document_id),
+            None,
+        )
+
+    def record_index_result(
+        self,
+        document_id: str,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        if self.index_status_path is None:
+            return
+        statuses = self._read_index_statuses()
+        statuses[document_id] = {
+            "status": status,
+            "error": error,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.index_status_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self.index_status_path.with_suffix(f"{self.index_status_path.suffix}.tmp")
+        temp_path.write_text(
+            json.dumps(statuses, ensure_ascii=True, indent=2),
+            encoding="utf-8",
+        )
+        temp_path.replace(self.index_status_path)
+
+    def _read_index_metadata(self) -> dict[str, dict]:
+        if self.index_path is None:
+            return {}
+        try:
+            payload = json.loads(self.index_path.read_text(encoding="utf-8"))
+            items = payload.get("items", [])
+            indexed_at = datetime.fromtimestamp(
+                self.index_path.stat().st_mtime,
+                timezone.utc,
+            ).isoformat()
+        except (FileNotFoundError, json.JSONDecodeError, OSError, AttributeError):
+            return {}
+        metadata: dict[str, dict] = {}
+        for item in items if isinstance(items, list) else []:
+            source = str(item.get("source", ""))
+            if not source:
+                continue
+            entry = metadata.setdefault(
+                source,
+                {"chunk_count": 0, "indexed_at": indexed_at},
+            )
+            entry["chunk_count"] += 1
+        return metadata
+
+    def _read_index_statuses(self) -> dict[str, dict]:
+        if self.index_status_path is None:
+            return {}
+        try:
+            payload = json.loads(self.index_status_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
     def save_upload(self, file: UploadFile) -> str:
         ext = Path(file.filename or "").suffix.lower()

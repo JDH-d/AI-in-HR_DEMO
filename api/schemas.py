@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,39 +54,6 @@ class SystemPromptUpdate(BaseModel):
     system_prompt: str = Field(..., min_length=1)
 
 
-class WorkflowStatusUpdate(BaseModel):
-    status: str = Field(..., min_length=1)
-    comment: str = ""
-
-
-class WorkflowConfirmation(BaseModel):
-    type: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    comment: Optional[str] = None
-    approver: Optional[str] = None
-
-
-class WorkflowAction(BaseModel):
-    comment: str = ""
-
-
 class WorkflowCommentCreate(BaseModel):
     body: str = Field(..., min_length=1)
     author: str = "Manager"
-
-
-class WorkflowFeedbackCreate(BaseModel):
-    rating: int = Field(..., ge=1, le=5)
-    comment: str = ""
-
-
-class WorkflowEventView(BaseModel):
-    id: str
-    request_id: str
-    event_type: str
-    from_status: Optional[str] = None
-    to_status: Optional[str] = None
-    actor: str
-    details: dict[str, Any]
-    created_at: str

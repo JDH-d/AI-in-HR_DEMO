@@ -15,8 +15,10 @@ htmlcov/
 .demo_state/
 .tmp*/
 *.log
-data/*.db
-data/*.jsonl
-data/index.json
+data/*
+!data/.gitkeep
 .vscode/
 .idea/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

@@ -1,13 +1,14 @@
 ﻿# Demo Scenarios
 
 ## Employee Flow
-1. Ask: `What can you help with?`
-2. Select: `1` or `PTO`
-3. Ask: `How far in advance should I request vacation?`
-4. Ask: `Can I request partial-day PTO?`
-5. Prepare a request: `I need vacation from 2030-04-10 to 2030-04-12`
-6. Review the extracted fields and click **Confirm and submit**.
-7. Open **My Requests** and show the status history.
+1. Sign in as `employee` with the configured demo password.
+2. Ask: `What can you help with?`
+3. Select: `1` or `PTO`
+4. Ask: `How far in advance should I request vacation?`
+5. Ask: `Can I request partial-day PTO?`
+6. Prepare a request: `I need vacation from 2030-04-10 to 2030-04-12`
+7. Review the extracted fields and click **Confirm and submit**.
+8. Open **My Requests** and show the status history.
 
 ## Manager Flow
 1. Ask: `How do schedule changes work?`
@@ -16,13 +17,12 @@
 4. Use the response to explain manager review expectations and policy-backed answers.
 
 ## Admin Flow
-1. Open the Streamlit admin console.
-2. Load the current system prompt.
-3. Refresh the document list.
-4. Rebuild the vector index after a document change.
-5. Load logs and show that user text can be masked.
-6. Load workflow requests and move one from `submitted` to `in_review`.
-7. Add a manager comment, then approve it and show the event history.
+1. Open the React application and choose an administration role.
+2. Sign in as `manager`, load requests, and approve or decline one.
+3. Add a manager comment and show the event history.
+4. Sign out and sign in as `knowledge_admin`.
+5. Refresh metrics and the document list.
+6. Index one document and inspect masked logs.
 
 ## Suggested Narrative
 - Start with employee self-service.

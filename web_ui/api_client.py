@@ -154,28 +154,41 @@ class DemoAPIClient:
             print(f"demo_api_client_status={response.status_code}")
         return response
 
-    def chat(self, messages: list[dict], user_id: str | None = None) -> requests.Response:
-        headers = {}
-        if user_id:
-            headers["X-User"] = user_id
-        return self.request("POST", "/chat", headers=headers, json={"messages": messages})
+    def login(self, username: str, password: str) -> requests.Response:
+        return self.request(
+            "POST",
+            "/api/v1/auth/login",
+            json={"username": username, "password": password},
+        )
 
-    def list_requests(self, user_id: str | None = None) -> requests.Response:
-        headers = {}
-        if user_id:
-            headers["X-User"] = user_id
-        return self.request("GET", "/requests", headers=headers)
+    def chat(self, messages: list[dict], token: str) -> requests.Response:
+        return self.request(
+            "POST",
+            "/api/v1/chat",
+            headers=self._auth_headers(token),
+            json={"messages": messages},
+        )
+
+    def me(self, token: str) -> requests.Response:
+        return self.request("GET", "/api/v1/me", headers=self._auth_headers(token))
+
+    def list_requests(self, token: str) -> requests.Response:
+        return self.request(
+            "GET",
+            "/api/v1/requests",
+            headers=self._auth_headers(token),
+        )
 
     def confirm_request(
         self,
         request_id: str,
         fields: dict,
-        user_id: str | None = None,
+        token: str,
     ) -> requests.Response:
         return self.request(
             "POST",
-            f"/requests/{request_id}/confirm",
-            headers=self._user_headers(user_id),
+            f"/api/v1/requests/{request_id}/submit",
+            headers=self._auth_headers(token),
             json=fields,
         )
 
@@ -183,36 +196,36 @@ class DemoAPIClient:
         self,
         request_id: str,
         comment: str = "",
-        user_id: str | None = None,
+        token: str = "",
     ) -> requests.Response:
         return self.request(
             "POST",
-            f"/requests/{request_id}/cancel",
-            headers=self._user_headers(user_id),
+            f"/api/v1/requests/{request_id}/cancel",
+            headers=self._auth_headers(token),
             json={"comment": comment},
         )
 
     def request_history(
         self,
         request_id: str,
-        user_id: str | None = None,
+        token: str,
     ) -> requests.Response:
         return self.request(
             "GET",
-            f"/requests/{request_id}/history",
-            headers=self._user_headers(user_id),
+            f"/api/v1/requests/{request_id}",
+            headers=self._auth_headers(token),
         )
 
     @staticmethod
-    def _user_headers(user_id: str | None) -> dict:
-        return {"X-User": user_id} if user_id else {}
+    def _auth_headers(token: str | None) -> dict:
+        return {"Authorization": f"Bearer {token}"} if token else {}
 
     def admin_request(
         self, method: str, path: str, token: str | None, **kwargs
     ) -> requests.Response:
         headers = {}
         if token:
-            headers["X-Admin-Token"] = token
+            headers["Authorization"] = f"Bearer {token}"
         provided_headers = kwargs.pop("headers", None) or {}
         headers.update(provided_headers)
         return self.request(method, path, headers=headers, **kwargs)

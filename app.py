@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from api.admin_routes import router as admin_router
-from api.chat_routes import router as chat_router
-from api.public_routes import router as public_router
+from api.v1_routes import router as v1_router
+from core.settings import CORS_ORIGINS
 
-app = FastAPI(title="AI HR Knowledge Assistant", version="1.0.0")
-app.include_router(public_router)
-app.include_router(chat_router)
-app.include_router(admin_router)
+app = FastAPI(title="AI HR Knowledge Assistant API", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+app.include_router(v1_router)

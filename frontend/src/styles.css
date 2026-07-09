@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0d0f0d;
+  --color-panel: #141714;
+  --color-raised: #1b1f1a;
+  --color-line: #2d322a;
+  --color-cream: #f4f1e8;
+  --color-muted: #9da397;
+  --color-lime: #c9f45b;
+  --color-lime-soft: #253016;
+  --color-coral: #ef9a75;
+  --color-danger: #ff786f;
+  --font-sans: "Inter", "Aptos", "Segoe UI", sans-serif;
+}
+
+:root { color-scheme: dark; font-family: var(--font-sans); background: #0d0f0d; color: #f4f1e8; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background:
+  radial-gradient(circle at 78% -10%, rgba(201,244,91,.09), transparent 30%),
+  radial-gradient(circle at 10% 110%, rgba(239,154,117,.07), transparent 30%), #0d0f0d; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+::selection { background: rgba(201,244,91,.25); color: #fff; }
+.glass { background: rgba(20,23,20,.86); backdrop-filter: blur(20px); }
+.soft-shadow { box-shadow: 0 24px 80px rgba(0,0,0,.34); }
+.focus-ring:focus-visible { outline: 2px solid #c9f45b; outline-offset: 3px; }
+.scrollbar::-webkit-scrollbar { width: 8px; }
+.scrollbar::-webkit-scrollbar-thumb { background: #32372e; border-radius: 999px; }
+.message-enter { animation: rise .28s ease-out; }
+.token-caret::after { content: ""; display: inline-block; width: 7px; height: 1.05em; margin-left: 3px; vertical-align: -2px; background: #c9f45b; animation: blink .8s infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes blink { 50% { opacity: 0; } }

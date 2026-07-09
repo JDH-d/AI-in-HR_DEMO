@@ -22,7 +22,7 @@ try {
 }
 
 $stopped = @()
-foreach ($name in @("api_pid", "user_ui_pid", "admin_ui_pid")) {
+foreach ($name in @("api_pid", "frontend_pid", "user_ui_pid", "admin_ui_pid")) {
     if (-not ($meta.PSObject.Properties.Name -contains $name)) {
         continue
     }

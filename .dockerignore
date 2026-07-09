@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 .demo_logs/
 .demo_state/
@@ -7,8 +9,14 @@
 .tmp_test_runs/
 .tmp_tests/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
 *.pyc
 *.pyo
 *.pyd
-data/*.db
-data/*.json
+*.log
+data/*
+!data/.gitkeep
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

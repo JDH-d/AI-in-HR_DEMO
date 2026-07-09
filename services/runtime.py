@@ -3,12 +3,18 @@ from __future__ import annotations
 from core import settings
 from workflow import WorkflowService
 
+from .auth_service import DemoAuthService
 from .chat_service import ChatService
 from .document_service import DocumentService
 from .llm_service import LLMService
 from .log_service import ChatLogService
 
 workflow_service = WorkflowService(str(settings.WORKFLOW_DB))
+auth_service = DemoAuthService(
+    secret=settings.DEMO_AUTH_SECRET,
+    password=settings.DEMO_LOGIN_PASSWORD,
+    ttl_seconds=settings.DEMO_TOKEN_TTL_SECONDS,
+)
 llm_service = LLMService(
     model=settings.OPENAI_MODEL,
 )
@@ -16,7 +22,11 @@ log_service = ChatLogService(
     settings.LOG_PATH,
     user_text_mode=settings.LOG_USER_TEXT_MODE,
 )
-document_service = DocumentService(settings.DOCUMENTS_DIR)
+document_service = DocumentService(
+    settings.DOCUMENTS_DIR,
+    index_path=settings.INDEX_PATH,
+    index_status_path=settings.INDEX_STATUS_PATH,
+)
 chat_service = ChatService(
     workflow_service=workflow_service,
     llm_service=llm_service,

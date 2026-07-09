@@ -1,7 +1,7 @@
 param(
     [int]$ApiPort = 8000,
-    [int]$UserUiPort = 8501,
-    [int]$AdminUiPort = 8502,
+    [int]$UserUiPort = 5173,
+    [int]$AdminUiPort = 0,
     [switch]$InstallDeps,
     [switch]$SkipIndexRebuild,
     [switch]$ForceRestart
@@ -95,7 +95,7 @@ function Wait-ApiReady {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         try {
-            $health = Invoke-RestMethod -Uri "$ApiBaseUrl/health" -Method Get -TimeoutSec 3
+            $health = Invoke-RestMethod -Uri "$ApiBaseUrl/api/v1/health" -Method Get -TimeoutSec 3
             if ($health.status -eq "ok") {
                 return $true
             }
@@ -122,7 +122,7 @@ function Get-RunningDemoPids {
     }
 
     $running = @()
-    foreach ($name in @("api_pid", "user_ui_pid", "admin_ui_pid")) {
+    foreach ($name in @("api_pid", "frontend_pid", "user_ui_pid", "admin_ui_pid")) {
         if (-not ($meta.PSObject.Properties.Name -contains $name)) {
             continue
         }
@@ -147,7 +147,8 @@ Set-Location $projectRoot
 $python = Resolve-Python
 $apiBaseUrl = "http://127.0.0.1:$ApiPort"
 $userUiUrl = "http://127.0.0.1:$UserUiPort"
-$adminUiUrl = "http://127.0.0.1:$AdminUiPort"
+$managerUiUrl = "$userUiUrl/manager"
+$adminUiUrl = "$userUiUrl/knowledge"
 
 $logDirectory = Join-Path $projectRoot ".demo_logs"
 $stateDirectory = Join-Path $projectRoot ".demo_state"
@@ -159,7 +160,14 @@ New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
 
 Import-DotEnv -Path $envFile
 $env:API_BASE_URL = $apiBaseUrl
+$env:VITE_API_URL = $apiBaseUrl
 $env:PYTHONUNBUFFERED = "1"
+if (-not $env:DEMO_LOGIN_PASSWORD) {
+    $env:DEMO_LOGIN_PASSWORD = "demo-password"
+}
+if (-not $env:DEMO_AUTH_SECRET) {
+    $env:DEMO_AUTH_SECRET = "local-demo-secret-change-before-sharing"
+}
 if (-not $env:WORKFLOW_DB) {
     $env:WORKFLOW_DB = (Join-Path $stateDirectory "workflow.db")
 }
@@ -168,6 +176,9 @@ if (-not $env:LOG_PATH) {
 }
 if (-not $env:INDEX_PATH) {
     $env:INDEX_PATH = (Join-Path $stateDirectory "index.json")
+}
+if (-not $env:INDEX_STATUS_PATH) {
+    $env:INDEX_STATUS_PATH = (Join-Path $stateDirectory "index_status.json")
 }
 if (-not $env:SYSTEM_PROMPT_PATH) {
     $env:SYSTEM_PROMPT_PATH = (Join-Path $stateDirectory "system_prompt.txt")
@@ -186,6 +197,14 @@ if ($runningPids.Count -gt 0) {
 
 if ($InstallDeps) {
     & $python.FilePath @($python.PrefixArgs + @("-m", "pip", "install", "-r", "requirements.txt"))
+    Push-Location (Join-Path $projectRoot "frontend")
+    npm install
+    Pop-Location
+}
+if (-not (Test-Path (Join-Path $projectRoot "frontend\node_modules"))) {
+    Push-Location (Join-Path $projectRoot "frontend")
+    npm install
+    Pop-Location
 }
 
 $apiArgs = $python.PrefixArgs + @(
@@ -193,17 +212,10 @@ $apiArgs = $python.PrefixArgs + @(
     "--host", "127.0.0.1",
     "--port", "$ApiPort"
 )
-$userUiArgs = $python.PrefixArgs + @(
-    "-m", "streamlit", "run", "streamlit_app.py",
-    "--server.address", "127.0.0.1",
-    "--server.port", "$UserUiPort",
-    "--server.headless", "true"
-)
-$adminUiArgs = $python.PrefixArgs + @(
-    "-m", "streamlit", "run", "admin_app.py",
-    "--server.address", "127.0.0.1",
-    "--server.port", "$AdminUiPort",
-    "--server.headless", "true"
+$frontendArgs = @(
+    "node_modules/vite/bin/vite.js",
+    "--host", "127.0.0.1",
+    "--port", "$UserUiPort"
 )
 
 $apiProc = Start-DemoProcess `
@@ -213,18 +225,12 @@ $apiProc = Start-DemoProcess `
     -WorkingDirectory $projectRoot `
     -LogDirectory $logDirectory
 
-$userUiProc = Start-DemoProcess `
-    -Name "user_ui" `
-    -FilePath $python.FilePath `
-    -ArgumentList $userUiArgs `
-    -WorkingDirectory $projectRoot `
-    -LogDirectory $logDirectory
-
-$adminUiProc = Start-DemoProcess `
-    -Name "admin_ui" `
-    -FilePath $python.FilePath `
-    -ArgumentList $adminUiArgs `
-    -WorkingDirectory $projectRoot `
+$nodeCommand = (Get-Command node -ErrorAction Stop).Source
+$frontendProc = Start-DemoProcess `
+    -Name "frontend" `
+    -FilePath $nodeCommand `
+    -ArgumentList $frontendArgs `
+    -WorkingDirectory (Join-Path $projectRoot "frontend") `
     -LogDirectory $logDirectory
 
 $apiReady = Wait-ApiReady -ApiBaseUrl $apiBaseUrl -TimeoutSeconds 45
@@ -233,27 +239,47 @@ if (-not $apiReady) {
 }
 
 if (-not $SkipIndexRebuild -and $apiReady) {
-    if ($env:ADMIN_TOKEN) {
+    if ($env:DEMO_LOGIN_PASSWORD) {
         try {
-            Invoke-RestMethod `
-                -Uri "$apiBaseUrl/admin/rebuild-index" `
+            $loginBody = @{
+                username = "knowledge_admin"
+                password = $env:DEMO_LOGIN_PASSWORD
+            } | ConvertTo-Json
+            $login = Invoke-RestMethod `
+                -Uri "$apiBaseUrl/api/v1/auth/login" `
                 -Method Post `
-                -Headers @{ "X-Admin-Token" = $env:ADMIN_TOKEN } `
-                -TimeoutSec 180 | Out-Null
-            Write-Host "RAG index rebuilt successfully."
+                -ContentType "application/json" `
+                -Body $loginBody `
+                -TimeoutSec 30
+            $headers = @{ "Authorization" = "Bearer $($login.access_token)" }
+            $documents = Invoke-RestMethod `
+                -Uri "$apiBaseUrl/api/v1/documents" `
+                -Method Get `
+                -Headers $headers `
+                -TimeoutSec 30
+            if ($documents.documents.Count -gt 0) {
+                $documentId = $documents.documents[0].id
+                Invoke-RestMethod `
+                    -Uri "$apiBaseUrl/api/v1/documents/$documentId/index" `
+                    -Method Post `
+                    -Headers $headers `
+                    -TimeoutSec 180 | Out-Null
+                Write-Host "RAG index rebuilt successfully."
+            }
         } catch {
             Write-Warning "Index rebuild failed: $($_.Exception.Message)"
         }
     } else {
-        Write-Warning "ADMIN_TOKEN is empty; skipped automatic index rebuild."
+        Write-Warning "DEMO_LOGIN_PASSWORD is empty; skipped automatic index rebuild."
     }
 }
 
 $meta = [ordered]@{
     started_at = (Get-Date).ToString("o")
     api_pid = $apiProc.Id
-    user_ui_pid = $userUiProc.Id
-    admin_ui_pid = $adminUiProc.Id
+    frontend_pid = $frontendProc.Id
+    user_ui_pid = $frontendProc.Id
+    admin_ui_pid = 0
     api_url = $apiBaseUrl
     user_ui_url = $userUiUrl
     admin_ui_url = $adminUiUrl
@@ -264,8 +290,9 @@ $meta | ConvertTo-Json | Set-Content -Path $pidFile -Encoding UTF8
 Write-Host ""
 Write-Host "Demo services started."
 Write-Host "API:      $apiBaseUrl"
-Write-Host "User UI:  $userUiUrl"
-Write-Host "Admin UI: $adminUiUrl"
+Write-Host "Employee:        $userUiUrl/employee"
+Write-Host "Manager:         $managerUiUrl"
+Write-Host "Knowledge Admin: $adminUiUrl"
 Write-Host "Logs:     $logDirectory"
 Write-Host "PIDs file: $pidFile"
 Write-Host ""

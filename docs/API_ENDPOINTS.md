@@ -1,89 +1,78 @@
-# API Endpoint Summary
+# API v1 Contract
 
-This project exposes a small FastAPI surface intended for local demos and portfolio review.
+The React-facing API is versioned under `/api/v1`. Except for health and login,
+every endpoint requires `Authorization: Bearer <token>`.
 
-## Public Endpoints
+## Demo Authentication
 
-| Method | Path | Purpose | Auth |
-| --- | --- | --- | --- |
-| `GET` | `/health` | Liveness check used by local scripts and smoke tests | None |
-| `POST` | `/chat` | Policy answers and workflow draft preparation | Optional `X-User` |
-| `GET` | `/requests` | List workflow requests created by the current user | Optional `X-User` |
-| `GET` | `/requests/{request_id}` | Read one request owned by the current user | Optional `X-User` |
-| `POST` | `/requests/{request_id}/confirm` | Validate editable draft fields and submit the request | Optional `X-User` |
-| `POST` | `/requests/{request_id}/cancel` | Cancel an eligible request | Optional `X-User` |
-| `GET` | `/requests/{request_id}/history` | Read status events and manager comments | Optional `X-User` |
-| `POST` | `/requests/{request_id}/feedback` | Add a 1–5 workflow rating | Optional `X-User` |
+`POST /api/v1/auth/login`
 
-## Admin Endpoints
+```json
+{
+  "username": "employee",
+  "password": "demo-password"
+}
+```
 
-Admin routes accept either `Authorization: Bearer <token>` or `X-Admin-Token: <token>`.
+Available predefined accounts are `employee`, `manager`, and
+`knowledge_admin`. The password comes from `DEMO_LOGIN_PASSWORD`. Tokens are
+HMAC-signed, expire after `DEMO_TOKEN_TTL_SECONDS`, and resolve to server-owned
+identities. `X-User` and arbitrary user IDs are not accepted.
 
-| Method | Path | Purpose |
+## Core Routes
+
+| Method | Path | Role |
 | --- | --- | --- |
-| `GET` | `/admin/system-prompt` | Read the active system prompt |
-| `PUT` | `/admin/system-prompt` | Update the system prompt |
-| `GET` | `/admin/documents` | List uploaded/readable documents |
-| `POST` | `/admin/documents` | Upload a new `.txt`, `.md`, `.pdf`, or `.docx` document |
-| `DELETE` | `/admin/documents/{doc_name}` | Delete a document by relative path/name |
-| `POST` | `/admin/rebuild-index` | Rebuild the RAG index from `documents/` |
-| `GET` | `/admin/logs` | Read recent chat logs |
-| `GET` | `/admin/requests` | List workflow requests across users |
-| `PUT` | `/admin/requests/{request_id}/status` | Apply an allowed workflow status transition |
-| `GET` | `/admin/requests/{request_id}/history` | Read the complete audit history |
-| `POST` | `/admin/requests/{request_id}/comments` | Add a manager comment |
+| `GET` | `/api/v1/health` | Public |
+| `POST` | `/api/v1/auth/login` | Public |
+| `POST` | `/api/v1/chat` | Authenticated |
+| `GET` | `/api/v1/me` | Authenticated |
+| `GET` | `/api/v1/requests` | Authenticated, role-scoped |
+| `POST` | `/api/v1/requests` | Employee |
+| `GET` | `/api/v1/requests/{id}` | Owner, Manager, Knowledge Admin |
+| `POST` | `/api/v1/requests/{id}/submit` | Employee owner |
+| `POST` | `/api/v1/requests/{id}/cancel` | Employee owner |
+| `POST` | `/api/v1/requests/{id}/approve` | Manager |
+| `POST` | `/api/v1/requests/{id}/decline` | Manager |
+| `POST` | `/api/v1/requests/{id}/complete` | Manager |
+| `POST` | `/api/v1/requests/{id}/comments` | Manager |
+| `GET` | `/api/v1/documents` | Knowledge Admin |
+| `POST` | `/api/v1/documents` | Knowledge Admin |
+| `DELETE` | `/api/v1/documents/{id}` | Knowledge Admin |
+| `POST` | `/api/v1/documents/{id}/index` | Knowledge Admin |
+| `POST` | `/api/v1/feedback` | Employee |
+| `GET` | `/api/v1/admin/metrics` | Knowledge Admin |
+| `GET/PUT` | `/api/v1/admin/system-prompt` | Knowledge Admin |
+| `GET` | `/api/v1/admin/logs` | Knowledge Admin |
 
-## Core Request Shapes
+## Request Example
 
-`POST /chat`
-
-```json
-{
-  "messages": [
-    {"role": "user", "content": "How often are salaries paid?"}
-  ],
-  "top_k": 4,
-  "min_similarity": 0.25
-}
-```
-
-Typical response fields:
+`POST /api/v1/requests`
 
 ```json
 {
-  "message": {"role": "assistant", "content": "..."},
-  "intent": "work",
-  "language": "en",
-  "sources": [
-    {
-      "source": "Payroll_FAQ.md",
-      "title": "Payroll and Pay Practices Handbook",
-      "section": "How often are salaries paid?",
-      "category": "Payroll",
-      "version": "2026.1",
-      "excerpt": "Pacific Beacon pays on a semi-monthly schedule...",
-      "score": 0.87
-    }
-  ]
+  "type": "pto",
+  "start_date": "2030-04-10",
+  "end_date": "2030-04-12",
+  "comment": "Family vacation"
 }
 ```
 
-An explicit action such as `I need vacation from 2030-04-01 to 2030-04-03`
-returns a `workflow_request` with status `draft`. The employee must submit
-`POST /requests/{id}/confirm`; chat never submits the request implicitly.
+This creates a `draft`. `POST /api/v1/requests/{id}/submit` performs final
+validation and transitions it to `submitted`.
 
-Workflow states are:
+Manager `approve` and `decline` endpoints open a submitted request for review
+before applying the decision, producing separate audit events.
 
-```text
-draft -> submitted -> in_review -> approved -> completed
-                                \-> declined
-draft/submitted/in_review -> cancelled
-```
+## React Integration
 
-## Notes
+Configured local React origins are controlled through `CORS_ORIGINS`. The
+default allows ports `3000` and `5173` on `localhost` and `127.0.0.1`.
 
-- `X-User` defaults to `anonymous` if not provided.
-- `POST /chat` can return document-grounded answers, guidance, or a workflow draft.
-- Policy questions do not create workflow records.
-- Invalid transitions return HTTP `409`; invalid dates or fields return HTTP `422`.
-- Admin document changes do not silently mutate the index; the explicit rebuild endpoint keeps demo behavior predictable.
+HTTP error semantics:
+
+- `401`: missing, invalid, or expired token;
+- `403`: authenticated role is not allowed;
+- `404`: resource is absent or outside the employee scope;
+- `409`: invalid workflow transition;
+- `422`: invalid fields or calendar dates.

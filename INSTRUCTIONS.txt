@@ -7,10 +7,11 @@ AI HR Knowledge Assistant - Local Demo Instructions
 2. Configure environment
 - Copy .env.example to .env.
 - Set OPENAI_API_KEY.
-- Set ADMIN_TOKEN.
+- Set DEMO_AUTH_SECRET and DEMO_LOGIN_PASSWORD.
 
 3. Install dependencies
 - pip install -r requirements.txt
+- cd frontend; npm install; cd ..
 
 4. Start local demo services
 - powershell -ExecutionPolicy Bypass -File .\run_demo.ps1
@@ -19,7 +20,7 @@ AI HR Knowledge Assistant - Local Demo Instructions
 - powershell -ExecutionPolicy Bypass -File .\stop_demo.ps1
 
 6. Rebuild document index
-- Use the admin UI Rebuild Index action, or call POST /admin/rebuild-index with the admin token.
+- Sign in as Knowledge Admin and use the document Index action.
 
 7. Validate retrieval quality
 - python -m scripts.run_rag_eval
@@ -29,4 +30,5 @@ AI HR Knowledge Assistant - Local Demo Instructions
 - services/: chat, documents, logs, RAG runtime, and LLM integration.
 - rag/: retrieval, prompts, topic routing, and index bootstrap.
 - workflow.py: SQLite workflow request storage.
-- web_ui/: Streamlit employee and admin interfaces.
+- frontend/: React, TypeScript, Vite, Tailwind, and role-based workspaces.
+- web_ui/: legacy Streamlit reference implementation; not started by the demo script.

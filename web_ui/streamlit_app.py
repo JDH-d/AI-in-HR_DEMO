@@ -250,7 +250,8 @@ def _stream_assistant_response(
 def _initialize_state() -> None:
     defaults = {
         "messages": [],
-        "user_id": "",
+        "auth_token": "",
+        "current_user": None,
         "composer_draft": "",
         "drawer_open": False,
         "request_in_flight": False,
@@ -268,7 +269,7 @@ def _render_workflow_confirmation(
     message: dict,
     message_index: int,
     api_client: DemoAPIClient,
-    user_id: str | None,
+    token: str,
 ) -> None:
     request_id = str(request.get("id", ""))
     status = str(request.get("status", "draft"))
@@ -316,7 +317,7 @@ def _render_workflow_confirmation(
                         "comment": comment,
                         "approver": approver,
                     },
-                    user_id,
+                    token,
                 )
                 data = safe_json(response)
                 if response.status_code == 200 and isinstance(data, dict):
@@ -327,7 +328,7 @@ def _render_workflow_confirmation(
                 st.error(format_http_error(response, data))
             elif cancel:
                 response = api_client.cancel_request(
-                    request_id, "Cancelled before submission", user_id
+                    request_id, "Cancelled before submission", token
                 )
                 data = safe_json(response)
                 if response.status_code == 200 and isinstance(data, dict):
@@ -609,18 +610,12 @@ def main() -> None:
     if st.session_state.request_in_flight and st.session_state.composer_draft:
         st.session_state.composer_draft = ""
 
-    query_user_id = ""
-    if hasattr(st, "query_params"):
-        query_user_id = str(st.query_params.get("user_id", "")).strip()
-    elif hasattr(st, "experimental_get_query_params"):
-        query_user_id = str((st.experimental_get_query_params().get("user_id") or [""])[0]).strip()
-    if query_user_id and not st.session_state.user_id:
-        st.session_state.user_id = query_user_id
-    active_user_id = str(st.session_state.get("user_id", "")).strip() or None
+    active_token = str(st.session_state.get("auth_token", "")).strip()
+    current_user = st.session_state.get("current_user")
 
     def _fetch_requests() -> None:
         try:
-            resp = api_client.list_requests(active_user_id)
+            resp = api_client.list_requests(active_token)
             data = safe_json(resp)
             if resp.status_code == 200:
                 if isinstance(data, dict):
@@ -635,21 +630,48 @@ def main() -> None:
             st.error(f"The API is currently unavailable: {exc}")
 
     with st.sidebar:
-        st.subheader("Session")
-        st.text_input(
-            "User ID",
-            key="user_id",
-            help="Applied automatically to chat requests and request history in this demo session.",
-        )
-        if st.button("View My Requests", help="Open my workflow requests"):
-            st.session_state.show_requests = True
-        if st.button("Clear Conversation", help="Clear the current conversation"):
-            st.session_state.messages = []
-            st.session_state.composer_draft = ""
-            st.session_state.drawer_open = False
-            st.session_state.request_in_flight = False
-            st.session_state.queued_prompt = ""
-            st.rerun()
+        st.subheader("Demo Login")
+        if not active_token:
+            with st.form("employee-login"):
+                st.text_input("Account", value="employee", disabled=True)
+                password = st.text_input("Demo password", type="password")
+                login_clicked = st.form_submit_button("Sign in")
+            if login_clicked:
+                try:
+                    response = api_client.login("employee", password)
+                    data = safe_json(response)
+                    if response.status_code == 200 and isinstance(data, dict):
+                        st.session_state.auth_token = data.get("access_token", "")
+                        st.session_state.current_user = data.get("user")
+                        st.rerun()
+                    st.error(format_http_error(response, data))
+                except requests.RequestException as exc:
+                    st.error(f"Login failed: {exc}")
+        else:
+            display_name = (
+                current_user.get("display_name", "Demo Employee")
+                if isinstance(current_user, dict)
+                else "Demo Employee"
+            )
+            st.success(f"Signed in as {display_name}")
+            if st.button("View My Requests", help="Open my workflow requests"):
+                st.session_state.show_requests = True
+            if st.button("Clear Conversation", help="Clear the current conversation"):
+                st.session_state.messages = []
+                st.session_state.composer_draft = ""
+                st.session_state.drawer_open = False
+                st.session_state.request_in_flight = False
+                st.session_state.queued_prompt = ""
+                st.rerun()
+            if st.button("Sign out"):
+                st.session_state.auth_token = ""
+                st.session_state.current_user = None
+                st.session_state.messages = []
+                st.rerun()
+
+    if not active_token:
+        st.info("Sign in with the predefined Employee demo account to use the assistant.")
+        return
 
     if st.session_state.get("show_requests"):
         if hasattr(st, "dialog"):
@@ -685,7 +707,7 @@ def main() -> None:
                                     response = api_client.cancel_request(
                                         request_id,
                                         "Cancelled by applicant",
-                                        active_user_id,
+                                        active_token,
                                     )
                                     response_data = safe_json(response)
                                     if response.status_code == 200:
@@ -695,7 +717,7 @@ def main() -> None:
                             if st.button("Show history", key=f"user-history-{request_id}"):
                                 response = api_client.request_history(
                                     request_id,
-                                    active_user_id,
+                                    active_token,
                                 )
                                 response_data = safe_json(response)
                                 if response.status_code == 200 and isinstance(response_data, dict):
@@ -746,7 +768,7 @@ def main() -> None:
                     msg,
                     message_index,
                     api_client,
-                    active_user_id,
+                    active_token,
                 )
 
     response_placeholder = None
@@ -774,7 +796,7 @@ def main() -> None:
         assistant_workflow = None
 
         try:
-            resp = api_client.chat(payload_messages, active_user_id)
+            resp = api_client.chat(payload_messages, active_token)
             data = safe_json(resp)
             if resp.status_code != 200:
                 assistant_content = format_http_error(resp, data)

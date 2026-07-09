@@ -34,6 +34,12 @@ class StreamlitComposerInteractionTests(unittest.TestCase):
         self.addCleanup(chat_patcher.stop)
 
         app = AppTest.from_file(os.path.join("web_ui", "streamlit_app.py"))
+        app.session_state["auth_token"] = "test-token"
+        app.session_state["current_user"] = {
+            "id": "employee.demo",
+            "display_name": "Demo Employee",
+            "role": "employee",
+        }
         app.run(timeout=10)
         return app
 
@@ -54,6 +60,16 @@ class StreamlitComposerInteractionTests(unittest.TestCase):
 
         self._assert_single_composer(app, disabled=False)
 
+    def test_unauthenticated_ui_has_login_and_no_free_user_id(self) -> None:
+        app = AppTest.from_file(os.path.join("web_ui", "streamlit_app.py"))
+        app.run(timeout=10)
+
+        labels = [item.label for item in app.text_input]
+        self.assertIn("Account", labels)
+        self.assertIn("Demo password", labels)
+        self.assertNotIn("User ID", labels)
+        self.assertFalse(any(item.key == "composer_draft" for item in app.text_input))
+
     def test_first_in_flight_render_keeps_single_disabled_composer(self) -> None:
         with (
             patch("web_ui.api_client.DemoAPIClient.chat", return_value=DummyResponse()),
@@ -65,6 +81,12 @@ class StreamlitComposerInteractionTests(unittest.TestCase):
         ):
             app = AppTest.from_file(os.path.join("web_ui", "streamlit_app.py"))
             app.session_state["messages"] = []
+            app.session_state["auth_token"] = "test-token"
+            app.session_state["current_user"] = {
+                "id": "employee.demo",
+                "display_name": "Demo Employee",
+                "role": "employee",
+            }
             app.session_state["composer_draft"] = "stale draft"
             app.session_state["drawer_open"] = False
             app.session_state["request_in_flight"] = True

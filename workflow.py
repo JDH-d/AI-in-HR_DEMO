@@ -369,6 +369,15 @@ class WorkflowStore:
                     FOREIGN KEY (request_id) REFERENCES workflow_requests(id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS assistant_feedback (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    rating INTEGER NOT NULL,
+                    comment TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_requests_applicant
                     ON workflow_requests(applicant, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_events_request
@@ -751,6 +760,78 @@ class WorkflowStore:
             "created_at": created_at,
         }
 
+    def metrics(self) -> dict:
+        with closing(self._connect()) as conn:
+            total_requests = conn.execute("SELECT COUNT(*) FROM workflow_requests").fetchone()[0]
+            by_status = {
+                row["status"]: row["count"]
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS count FROM workflow_requests GROUP BY status"
+                ).fetchall()
+            }
+            by_type = {
+                row["type"]: row["count"]
+                for row in conn.execute(
+                    "SELECT type, COUNT(*) AS count FROM workflow_requests GROUP BY type"
+                ).fetchall()
+            }
+            counts = {}
+            for table in (
+                "users",
+                "request_events",
+                "request_comments",
+                "feedback",
+                "assistant_feedback",
+            ):
+                counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            positive_feedback = conn.execute(
+                """
+                SELECT COUNT(*) FROM (
+                    SELECT rating FROM feedback
+                    UNION ALL
+                    SELECT rating FROM assistant_feedback
+                ) WHERE rating >= 4
+                """
+            ).fetchone()[0]
+        return {
+            "total_requests": total_requests,
+            "requests_by_status": by_status,
+            "requests_by_type": by_type,
+            "positive_feedback": positive_feedback,
+            **counts,
+        }
+
+    def add_assistant_feedback(
+        self,
+        user_id: str,
+        rating: int,
+        comment: str,
+        question: str,
+    ) -> dict:
+        if rating < 1 or rating > 5:
+            raise WorkflowValidationError(["Rating must be between 1 and 5."])
+        feedback_id = uuid.uuid4().hex
+        created_at = _utc_now()
+        with closing(self._connect()) as conn:
+            self._ensure_user(conn, user_id, "employee")
+            conn.execute(
+                """
+                INSERT INTO assistant_feedback
+                (id, user_id, rating, comment, question, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (feedback_id, user_id, rating, comment.strip(), question.strip(), created_at),
+            )
+            conn.commit()
+        return {
+            "id": feedback_id,
+            "user_id": user_id,
+            "rating": rating,
+            "comment": comment.strip(),
+            "question": question.strip(),
+            "created_at": created_at,
+        }
+
     @staticmethod
     def _require_request(conn: sqlite3.Connection, request_id: str) -> sqlite3.Row:
         row = conn.execute("SELECT * FROM workflow_requests WHERE id = ?", (request_id,)).fetchone()
@@ -773,6 +854,36 @@ class WorkflowService:
         if draft is None:
             return None
         return self.store.create_draft(draft)
+
+    def create_structured_draft(
+        self,
+        *,
+        request_type: str,
+        start_date: str | None,
+        end_date: str | None,
+        comment: str,
+        applicant: str,
+        approver: str,
+    ) -> dict:
+        errors = validate_request_fields(
+            request_type,
+            start_date,
+            end_date,
+            comment,
+            approver,
+        )
+        if errors:
+            raise WorkflowValidationError(errors)
+        return self.store.create_draft(
+            WorkflowDraftData(
+                request_type=request_type,
+                start_date=start_date,
+                end_date=end_date,
+                comment=comment.strip(),
+                applicant=_normalize_user(applicant, "anonymous"),
+                approver=_normalize_user(approver, "manager.demo"),
+            )
+        )
 
     def confirm_draft(self, request_id: str, applicant: str, fields: dict) -> dict:
         return self.store.confirm_draft(
@@ -838,6 +949,18 @@ class WorkflowService:
         if self.get_for_user(request_id, user_id) is None:
             raise WorkflowNotFoundError("The workflow request could not be found.")
         return self.store.add_feedback(request_id, user_id, rating, comment)
+
+    def metrics(self) -> dict:
+        return self.store.metrics()
+
+    def add_assistant_feedback(
+        self,
+        user_id: str,
+        rating: int,
+        comment: str = "",
+        question: str = "",
+    ) -> dict:
+        return self.store.add_assistant_feedback(user_id, rating, comment, question)
 
 
 def _optional_string(value: object) -> str | None:

@@ -184,6 +184,20 @@ class WebUIHelperTests(unittest.TestCase):
         session.request.assert_called_once()
         session.close.assert_called_once()
 
+    @patch("web_ui.api_client.requests.Session")
+    def test_chat_uses_v1_bearer_auth_without_x_user(self, session_factory: MagicMock) -> None:
+        session = MagicMock()
+        session.request.return_value = object()
+        session_factory.return_value = session
+
+        client = DemoAPIClient(api_base_url="http://127.0.0.1:8016")
+        client.chat([{"role": "user", "content": "Hello"}], "signed-token")
+
+        args, kwargs = session.request.call_args
+        self.assertEqual(args[1], "http://127.0.0.1:8016/api/v1/chat")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer signed-token")
+        self.assertNotIn("X-User", kwargs["headers"])
+
 
 if __name__ == "__main__":
     unittest.main()

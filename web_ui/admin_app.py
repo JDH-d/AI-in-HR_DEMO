@@ -1,261 +1,284 @@
 from __future__ import annotations
 
-import os
-from urllib.parse import quote
-
 import requests
 import streamlit as st
 
-from .api_client import DemoAPIClient
-
-ENV_ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
-WORKFLOW_TRANSITIONS = {
-    "draft": [],
-    "submitted": ["in_review"],
-    "in_review": ["approved", "declined"],
-    "approved": ["completed"],
-    "declined": [],
-    "completed": [],
-    "cancelled": [],
-}
+from .api_client import DemoAPIClient, format_http_error, safe_json
 
 
 def main() -> None:
     st.set_page_config(page_title="Administration Console", layout="wide")
     st.title("Administration Console")
-    st.caption(
-        "Manage prompt configuration, source documents, audit logs, and workflow requests for the demo environment."
-    )
+    st.caption("Role-based manager and knowledge administration for the demo environment.")
     api_client = DemoAPIClient(timeout_seconds=30)
+    _initialize_state()
 
-    if "admin_token" not in st.session_state:
-        st.session_state.admin_token = ENV_ADMIN_TOKEN
-
+    token = str(st.session_state.get("admin_auth_token", ""))
+    user = st.session_state.get("admin_user")
     with st.sidebar:
-        st.subheader("Access")
-        token = st.text_input(
-            "Administrator token",
-            type="password",
-            value=st.session_state.admin_token,
-        )
-        if st.button("Save Token"):
-            st.session_state.admin_token = token.strip()
-        if st.session_state.admin_token:
-            st.success("Administrator token is loaded.")
+        st.subheader("Demo Login")
+        if not token:
+            with st.form("admin-login"):
+                account = st.selectbox(
+                    "Account",
+                    options=["manager", "knowledge_admin"],
+                    format_func=lambda value: {
+                        "manager": "Manager",
+                        "knowledge_admin": "Knowledge Admin",
+                    }[value],
+                )
+                password = st.text_input("Demo password", type="password")
+                submitted = st.form_submit_button("Sign in")
+            if submitted:
+                response = _request(
+                    api_client,
+                    "POST",
+                    "/api/v1/auth/login",
+                    None,
+                    json={
+                        "username": account,
+                        "password": password,
+                    },
+                )
+                data = safe_json(response) if response is not None else None
+                if response is not None and response.status_code == 200 and isinstance(data, dict):
+                    st.session_state.admin_auth_token = data.get("access_token", "")
+                    st.session_state.admin_user = data.get("user")
+                    st.rerun()
+                elif response is not None:
+                    st.error(format_http_error(response, data))
         else:
-            st.info("Provide the administrator token to enable privileged actions.")
+            display_name = user.get("display_name", "") if isinstance(user, dict) else ""
+            st.success(f"Signed in as {display_name}")
+            if st.button("Sign out"):
+                st.session_state.admin_auth_token = ""
+                st.session_state.admin_user = None
+                st.rerun()
 
-    token = st.session_state.admin_token
+    if not token or not isinstance(user, dict):
+        st.info("Sign in with a predefined Manager or Knowledge Admin account.")
+        return
+
+    role = user.get("role")
+    if role == "knowledge_admin":
+        _render_knowledge_admin(api_client, token)
+    elif role == "manager":
+        _render_manager(api_client, token)
+    else:
+        st.error("This demo role does not have an administration workspace.")
+
+
+def _initialize_state() -> None:
+    defaults = {
+        "admin_auth_token": "",
+        "admin_user": None,
+        "documents": [],
+        "workflow_requests": [],
+        "metrics": {},
+        "logs": [],
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def _render_knowledge_admin(api_client: DemoAPIClient, token: str) -> None:
+    st.subheader("System Metrics")
+    if st.button("Refresh Metrics"):
+        response = _request(api_client, "GET", "/api/v1/admin/metrics", token)
+        data = safe_json(response) if response is not None else None
+        if response is not None and response.status_code == 200 and isinstance(data, dict):
+            st.session_state.metrics = data.get("metrics", {})
+        elif response is not None:
+            st.error(format_http_error(response, data))
+    if st.session_state.metrics:
+        st.json(st.session_state.metrics)
 
     st.divider()
     st.subheader("System Prompt")
-    col_prompt, col_actions = st.columns([3, 1])
-    with col_actions:
-        if st.button("Load Current Prompt"):
-            resp = _admin_request(api_client, "GET", "/admin/system-prompt", token)
-            if resp is not None:
-                if resp.status_code == 200:
-                    st.session_state.system_prompt = resp.json().get("system_prompt", "")
-                else:
-                    st.error(f"Unable to load the system prompt: {resp.status_code} {resp.text}")
-
-    prompt_value = st.session_state.get("system_prompt", "")
-    new_prompt = col_prompt.text_area("System prompt", value=prompt_value, height=240)
-    if col_prompt.button("Save Prompt"):
-        resp = _admin_request(
+    prompt_col, action_col = st.columns([4, 1])
+    if action_col.button("Load Prompt"):
+        response = _request(api_client, "GET", "/api/v1/admin/system-prompt", token)
+        data = safe_json(response) if response is not None else None
+        if response is not None and response.status_code == 200 and isinstance(data, dict):
+            st.session_state.system_prompt = data.get("system_prompt", "")
+        elif response is not None:
+            st.error(format_http_error(response, data))
+    prompt = prompt_col.text_area(
+        "System prompt",
+        value=st.session_state.get("system_prompt", ""),
+        height=200,
+    )
+    if prompt_col.button("Save Prompt"):
+        response = _request(
             api_client,
             "PUT",
-            "/admin/system-prompt",
+            "/api/v1/admin/system-prompt",
             token,
-            json={"system_prompt": new_prompt},
+            json={"system_prompt": prompt},
         )
-        if resp is not None:
-            if resp.status_code == 200:
-                st.success("The system prompt was updated successfully.")
-            else:
-                st.error(f"Unable to save the system prompt: {resp.status_code} {resp.text}")
+        if response is not None and response.status_code == 200:
+            st.success("System prompt saved.")
+        elif response is not None:
+            st.error(format_http_error(response, safe_json(response)))
 
     st.divider()
-    st.subheader("Knowledge Base Documents")
-    col_docs, col_upload = st.columns([3, 1])
+    st.subheader("Knowledge Documents")
+    upload_col, refresh_col = st.columns([3, 1])
+    uploaded = upload_col.file_uploader("Upload document", type=["txt", "md", "pdf", "docx"])
+    if upload_col.button("Upload") and uploaded:
+        response = _request(
+            api_client,
+            "POST",
+            "/api/v1/documents",
+            token,
+            files={"file": (uploaded.name, uploaded.getvalue())},
+        )
+        if response is not None and response.status_code == 201:
+            st.success(f"Uploaded {uploaded.name}.")
+        elif response is not None:
+            st.error(format_http_error(response, safe_json(response)))
+    if refresh_col.button("Refresh Documents"):
+        response = _request(api_client, "GET", "/api/v1/documents", token)
+        data = safe_json(response) if response is not None else None
+        if response is not None and response.status_code == 200 and isinstance(data, dict):
+            st.session_state.documents = data.get("documents", [])
+        elif response is not None:
+            st.error(format_http_error(response, data))
 
-    with col_upload:
-        uploaded = st.file_uploader("Upload document", type=["txt", "md", "pdf", "docx"])
-        if st.button("Upload Document"):
-            if not uploaded:
-                st.warning("Select a document before uploading.")
-            else:
-                resp = _admin_request(
-                    api_client,
-                    "POST",
-                    "/admin/documents",
-                    token,
-                    files={"file": (uploaded.name, uploaded.getvalue())},
-                )
-                if resp is not None:
-                    if resp.status_code == 200:
-                        st.success(f"Document uploaded: {uploaded.name}")
-                    else:
-                        st.error(f"Document upload failed: {resp.status_code} {resp.text}")
-
-    if col_docs.button("Refresh Document List"):
-        resp = _admin_request(api_client, "GET", "/admin/documents", token)
-        if resp is not None:
-            if resp.status_code == 200:
-                st.session_state.documents = resp.json().get("documents", [])
-            else:
-                st.error(f"Unable to load documents: {resp.status_code} {resp.text}")
-
-    documents = st.session_state.get("documents", [])
-    if documents:
-        for doc in documents:
-            name = doc.get("name", "")
-            title = doc.get("title", "")
-            category = doc.get("category", "")
-            version = doc.get("version", "")
-            size = doc.get("size", 0)
-            modified = doc.get("modified", "")
-            row = st.columns([3, 2, 1, 1, 2, 1])
-            row[0].write(title or name)
-            row[1].write(category)
-            row[2].write(f"v{version}")
-            row[3].write(f"{size} bytes")
-            row[4].write(modified)
-            if row[5].button("Delete", key=f"del-{name}"):
-                resp = _admin_request(
-                    api_client, "DELETE", f"/admin/documents/{quote(name)}", token
-                )
-                if resp is not None:
-                    if resp.status_code == 200:
-                        st.success(f"Document deleted: {name}")
-                    else:
-                        st.error(f"Document deletion failed: {resp.status_code} {resp.text}")
-    else:
-        st.caption("No documents have been loaded yet.")
-
-    st.divider()
-    st.subheader("Vector Index")
-    if st.button("Rebuild Index"):
-        resp = _admin_request(api_client, "POST", "/admin/rebuild-index", token)
-        if resp is not None:
-            if resp.status_code == 200:
-                st.success("The vector index rebuild completed successfully.")
-            else:
-                st.error(f"Unable to rebuild the vector index: {resp.status_code} {resp.text}")
+    for document in st.session_state.documents:
+        document_id = document.get("id", "")
+        columns = st.columns([4, 2, 1, 1])
+        columns[0].write(document.get("title") or document.get("name"))
+        columns[1].write(f"{document.get('category')} · v{document.get('version')}")
+        if columns[2].button("Index", key=f"index-{document_id}"):
+            response = _request(
+                api_client,
+                "POST",
+                f"/api/v1/documents/{document_id}/index",
+                token,
+            )
+            if response is not None and response.status_code == 200:
+                st.success("Index rebuilt.")
+            elif response is not None:
+                st.error(format_http_error(response, safe_json(response)))
+        if columns[3].button("Delete", key=f"delete-{document_id}"):
+            response = _request(
+                api_client,
+                "DELETE",
+                f"/api/v1/documents/{document_id}",
+                token,
+            )
+            if response is not None and response.status_code == 200:
+                st.success("Document deleted.")
+                st.rerun()
+            elif response is not None:
+                st.error(format_http_error(response, safe_json(response)))
 
     st.divider()
     st.subheader("Conversation Logs")
-    st.caption("User text may be masked depending on LOG_USER_TEXT_MODE.")
-    limit = st.slider("Log entries", min_value=10, max_value=500, value=100, step=10)
     if st.button("Load Logs"):
-        resp = _admin_request(api_client, "GET", f"/admin/logs?limit={limit}", token)
-        if resp is not None:
-            if resp.status_code == 200:
-                st.session_state.logs = resp.json().get("logs", [])
-            else:
-                st.error(f"Unable to load logs: {resp.status_code} {resp.text}")
+        response = _request(api_client, "GET", "/api/v1/admin/logs?limit=100", token)
+        data = safe_json(response) if response is not None else None
+        if response is not None and response.status_code == 200 and isinstance(data, dict):
+            st.session_state.logs = data.get("logs", [])
+        elif response is not None:
+            st.error(format_http_error(response, data))
+    if st.session_state.logs:
+        st.dataframe(st.session_state.logs, width="stretch")
 
-    logs = st.session_state.get("logs", [])
-    if logs:
-        st.dataframe(logs, use_container_width=True)
-    else:
-        st.caption("No log entries are available.")
 
-    st.divider()
+def _render_manager(api_client: DemoAPIClient, token: str) -> None:
     st.subheader("Workflow Requests")
-    req_limit = st.slider(
-        "Request entries",
-        min_value=10,
-        max_value=500,
-        value=100,
-        step=10,
-    )
-    if st.button("Load Requests"):
-        resp = _admin_request(api_client, "GET", f"/admin/requests?limit={req_limit}", token)
-        if resp is not None:
-            if resp.status_code == 200:
-                st.session_state.workflow_requests = resp.json().get("requests", [])
-            else:
-                st.error(f"Unable to load workflow requests: {resp.status_code} {resp.text}")
+    if st.button("Refresh Requests"):
+        response = _request(api_client, "GET", "/api/v1/requests", token)
+        data = safe_json(response) if response is not None else None
+        if response is not None and response.status_code == 200 and isinstance(data, dict):
+            st.session_state.workflow_requests = data.get("requests", [])
+        elif response is not None:
+            st.error(format_http_error(response, data))
 
-    workflow_requests = st.session_state.get("workflow_requests", [])
-    if workflow_requests:
-        st.caption("Only valid state-machine transitions are available.")
-        for req in workflow_requests:
-            request_id = req.get("id", "")
-            current_status = (req.get("status") or "draft").lower()
-            with st.expander(
-                f"{req.get('type_label', req.get('type', 'Request'))} · "
-                f"{req.get('applicant', '')} · {current_status}"
-            ):
-                st.json(req)
-                transitions = WORKFLOW_TRANSITIONS.get(current_status, [])
-                if transitions:
-                    new_status = st.selectbox(
-                        "Next status",
-                        options=transitions,
-                        key=f"status-{request_id}",
-                    )
-                    transition_comment = st.text_input(
-                        "Transition note",
-                        key=f"transition-comment-{request_id}",
-                    )
-                    if st.button("Apply transition", key=f"update-{request_id}"):
-                        resp = _admin_request(
-                            api_client,
-                            "PUT",
-                            f"/admin/requests/{request_id}/status",
-                            token,
-                            json={"status": new_status, "comment": transition_comment},
-                        )
-                        if resp is not None and resp.status_code == 200:
-                            st.success(f"Workflow request updated: {request_id}")
-                            req["status"] = new_status
-                            st.rerun()
-                        elif resp is not None:
-                            st.error(f"Workflow update failed: {resp.status_code} {resp.text}")
-                else:
-                    st.caption("No manager transition is available from this status.")
+    requests_data = st.session_state.workflow_requests
+    if not requests_data:
+        st.caption("No requests loaded.")
+        return
 
-                manager_comment = st.text_input(
-                    "Manager comment",
-                    key=f"manager-comment-{request_id}",
+    for request in requests_data:
+        request_id = request.get("id", "")
+        request_status = request.get("status", "")
+        with st.expander(
+            f"{request.get('type_label', request.get('type'))} · "
+            f"{request.get('applicant')} · {request_status}"
+        ):
+            st.json(request)
+            decision_comment = st.text_input(
+                "Decision comment",
+                key=f"decision-comment-{request_id}",
+            )
+            if request_status in {"submitted", "in_review"}:
+                approve_col, decline_col = st.columns(2)
+                if approve_col.button("Approve", key=f"approve-{request_id}"):
+                    _decision(api_client, token, request_id, "approve", decision_comment)
+                if decline_col.button("Decline", key=f"decline-{request_id}"):
+                    _decision(api_client, token, request_id, "decline", decision_comment)
+            elif request_status == "approved":
+                if st.button("Mark Completed", key=f"complete-{request_id}"):
+                    _decision(api_client, token, request_id, "complete", decision_comment)
+
+            manager_comment = st.text_input("Manager comment", key=f"comment-{request_id}")
+            if st.button("Add Comment", key=f"add-comment-{request_id}"):
+                response = _request(
+                    api_client,
+                    "POST",
+                    f"/api/v1/requests/{request_id}/comments",
+                    token,
+                    json={"author": "Manager", "body": manager_comment},
                 )
-                if st.button("Add comment", key=f"add-comment-{request_id}"):
-                    resp = _admin_request(
-                        api_client,
-                        "POST",
-                        f"/admin/requests/{request_id}/comments",
-                        token,
-                        json={"author": "Manager", "body": manager_comment},
-                    )
-                    if resp is not None and resp.status_code == 200:
-                        st.success("Manager comment added.")
-                    elif resp is not None:
-                        st.error(f"Comment failed: {resp.status_code} {resp.text}")
+                if response is not None and response.status_code == 201:
+                    st.success("Comment added.")
+                elif response is not None:
+                    st.error(format_http_error(response, safe_json(response)))
 
-                if st.button("Load history", key=f"history-button-{request_id}"):
-                    resp = _admin_request(
-                        api_client,
-                        "GET",
-                        f"/admin/requests/{request_id}/history",
-                        token,
-                    )
-                    if resp is not None and resp.status_code == 200:
-                        st.session_state[f"history-{request_id}"] = resp.json()
-                    elif resp is not None:
-                        st.error(f"History failed: {resp.status_code} {resp.text}")
-                history = st.session_state.get(f"history-{request_id}")
-                if history:
-                    st.markdown("**Status history**")
-                    st.dataframe(history.get("events", []), width="stretch")
-                    st.markdown("**Comments**")
-                    st.dataframe(history.get("comments", []), width="stretch")
-    else:
-        st.caption("No workflow requests are available.")
+            if st.button("Load History", key=f"history-{request_id}"):
+                response = _request(
+                    api_client,
+                    "GET",
+                    f"/api/v1/requests/{request_id}",
+                    token,
+                )
+                data = safe_json(response) if response is not None else None
+                if response is not None and response.status_code == 200 and isinstance(data, dict):
+                    st.session_state[f"history-data-{request_id}"] = data
+                elif response is not None:
+                    st.error(format_http_error(response, data))
+            history = st.session_state.get(f"history-data-{request_id}")
+            if history:
+                st.dataframe(history.get("events", []), width="stretch")
+                st.dataframe(history.get("comments", []), width="stretch")
 
 
-def _admin_request(
+def _decision(
+    api_client: DemoAPIClient,
+    token: str,
+    request_id: str,
+    action: str,
+    comment: str,
+) -> None:
+    response = _request(
+        api_client,
+        "POST",
+        f"/api/v1/requests/{request_id}/{action}",
+        token,
+        json={"comment": comment},
+    )
+    if response is not None and response.status_code == 200:
+        st.success(f"Request action applied: {action}.")
+        st.rerun()
+    elif response is not None:
+        st.error(format_http_error(response, safe_json(response)))
+
+
+def _request(
     api_client: DemoAPIClient,
     method: str,
     path: str,
