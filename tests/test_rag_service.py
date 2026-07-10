@@ -16,6 +16,15 @@ class FailingLLM:
         raise LLMServiceError("LLM unavailable")
 
 
+class RecordingLLM:
+    def __init__(self) -> None:
+        self.messages: list[dict] = []
+
+    def generate(self, prompt_messages: list[dict]) -> str:
+        self.messages = prompt_messages
+        return "General guidance only; confirm the company-specific rule with HR."
+
+
 class RAGServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = Path.cwd() / ".tmp_test_runs" / self._testMethodName
@@ -102,6 +111,52 @@ class RAGServiceTests(unittest.TestCase):
 
         self.assertEqual(outcome.intent, Intent.WORK)
         self.assertEqual(outcome.sources[0].title, "Office Guide")
+
+    def test_general_guidance_is_available_only_when_strict_grounding_is_disabled(self) -> None:
+        llm = RecordingLLM()
+        service = RAGService(
+            llm_service=llm,
+            document_service=DocumentService(self.temp_dir / "documents"),
+            fallback_policy=ChatFallbackPolicy(),
+            index_ensurer=lambda: None,
+            retriever_provider=lambda: Mock(query=Mock(return_value=[])),
+        )
+        query = ChatQuery(
+            messages=[ChatTurn(role="user", content="What is the relocation process?")]
+        )
+        decision = RoutingDecision(
+            language="en",
+            intent=Intent.WORK,
+            topic_selection=None,
+            explicit_topic_choice=False,
+            prior_topic=None,
+        )
+
+        strict = service.answer_with_retrieval(
+            query,
+            decision,
+            settings={"strict_grounding": True},
+        )
+        general = service.answer_with_retrieval(
+            query,
+            decision,
+            settings={
+                "strict_grounding": False,
+                "concise_answers": False,
+                "ask_clarifying_questions": False,
+                "suggest_next_steps": False,
+            },
+            system_prompt="Custom preview behavior",
+        )
+
+        self.assertIn("could not find a reliable answer", strict.content)
+        self.assertEqual(
+            general.content,
+            "General guidance only; confirm the company-specific rule with HR.",
+        )
+        system_text = llm.messages[0]["content"][0]["text"]
+        self.assertIn("Custom preview behavior", system_text)
+        self.assertIn("not confirmed company policy", system_text)
 
 
 if __name__ == "__main__":

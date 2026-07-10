@@ -36,6 +36,24 @@ export async function login(username: Role, password: string): Promise<{ token: 
   return { token: parsed.access_token, user: parsed.user };
 }
 
+export async function downloadFile(path: string, token: string, filename: string): Promise<void> {
+  const response = await fetch(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, payload.detail || "Unable to download the document");
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function streamChat(
   token: string,
   messages: { role: string; content: string }[],

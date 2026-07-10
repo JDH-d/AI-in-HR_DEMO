@@ -52,7 +52,7 @@ class ChatFallbackPolicy:
     def workflow_draft(request_id: str, validation_errors: list[str]) -> str:
         message = (
             f"I prepared request draft {request_id}. "
-            "Review the extracted fields and confirm before it is submitted."
+            "Review the extracted fields and confirm before it is sent for review."
         )
         if validation_errors:
             message += " Please correct the highlighted fields before confirmation."

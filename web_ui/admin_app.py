@@ -215,16 +215,12 @@ def _render_manager(api_client: DemoAPIClient, token: str) -> None:
                 "Decision comment",
                 key=f"decision-comment-{request_id}",
             )
-            if request_status in {"submitted", "in_review"}:
+            if request_status == "in_review":
                 approve_col, decline_col = st.columns(2)
                 if approve_col.button("Approve", key=f"approve-{request_id}"):
                     _decision(api_client, token, request_id, "approve", decision_comment)
                 if decline_col.button("Decline", key=f"decline-{request_id}"):
                     _decision(api_client, token, request_id, "decline", decision_comment)
-            elif request_status == "approved":
-                if st.button("Mark Completed", key=f"complete-{request_id}"):
-                    _decision(api_client, token, request_id, "complete", decision_comment)
-
             manager_comment = st.text_input("Manager comment", key=f"comment-{request_id}")
             if st.button("Add Comment", key=f"add-comment-{request_id}"):
                 response = _request(

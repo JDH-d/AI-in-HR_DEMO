@@ -189,6 +189,28 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual(response.intent, "invalid")
         self.assertIn("I can assist only with supported workplace topics", response.message.content)
         self.assertNotIn("Salaries are paid", response.message.content)
+        self.assertEqual(self.log_service.entries, [])
+
+    def test_preview_mode_creates_no_request_and_writes_no_log(self) -> None:
+        request = ChatRequest(
+            messages=[
+                Message(
+                    role="user",
+                    content="I need vacation from 2030-04-01 to 2030-04-03",
+                )
+            ]
+        )
+
+        response = self.service.handle_chat(
+            request,
+            created_by="knowledge-admin",
+            log_outcome=False,
+            allow_workflow=False,
+        )
+
+        self.assertIsNone(response.workflow_request)
+        self.assertEqual(self.service.workflow_service.list_for_user("knowledge-admin"), [])
+        self.assertEqual(self.log_service.entries, [])
 
     def test_rag_bootstrap_failure_returns_service_fallback(self) -> None:
         request = ChatRequest(

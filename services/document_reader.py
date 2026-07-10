@@ -121,6 +121,10 @@ def load_documents(folder: Path) -> list[DocumentRecord]:
 
 def _extract_title(text: str, fallback: str) -> str:
     for line in text.splitlines():
+        heading = re.match(r"^#\s+(.+?)\s*$", line)
+        if heading:
+            return heading.group(1).strip()
+    for line in text.splitlines():
         heading = re.match(r"^##\s+(.+?)\s*$", line)
         if heading:
             return heading.group(1).strip()

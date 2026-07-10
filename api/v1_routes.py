@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -7,22 +8,26 @@ from datetime import datetime, timezone
 from typing import Iterator
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from api.schemas import ChatResponse, SystemPromptUpdate, WorkflowCommentCreate
 from api.v1_dependencies import current_identity, require_roles
 from api.v1_schemas import (
+    AISettingsTestRequest,
+    AISettingsUpdate,
     DecisionRequest,
     FeedbackCreate,
     LoginRequest,
+    QualityReviewAction,
     RequestSubmit,
     StructuredRequestCreate,
     V1ChatRequest,
 )
 from rag.index import rebuild_index
-from rag.prompts import load_system_prompt, save_system_prompt
+from rag.prompts import DEFAULT_SYSTEM_PROMPT, load_system_prompt, save_system_prompt
 from services.auth_service import AuthenticationError, DemoIdentity
 from services.runtime import (
+    ai_settings_service,
     auth_service,
     chat_service,
     document_service,
@@ -183,25 +188,6 @@ def decline_request(
     return {"request": _manager_decision(request_id, "declined", identity, payload.comment)}
 
 
-@router.post("/requests/{request_id}/complete")
-def complete_request(
-    request_id: str,
-    payload: DecisionRequest,
-    identity: DemoIdentity = Depends(require_roles("manager")),
-) -> dict:
-    _request_for_identity(request_id, identity)
-    try:
-        request = workflow_service.transition(
-            request_id,
-            "completed",
-            actor=identity.id,
-            comment=payload.comment,
-        )
-    except InvalidTransitionError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"request": request}
-
-
 @router.post("/requests/{request_id}/comments", status_code=status.HTTP_201_CREATED)
 def add_manager_comment(
     request_id: str,
@@ -237,7 +223,21 @@ def upload_document(
         (item for item in document_service.list_documents() if item["name"] == name),
         None,
     )
+    if document and ai_settings_service.get()["auto_index_uploads"]:
+        document = _rebuild_document_index(document["id"], document)
     return {"document": document or {"id": document_service.document_id(name), "name": name}}
+
+
+@router.get("/documents/{document_id}/download")
+def download_document(
+    document_id: str,
+    _: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> FileResponse:
+    document = document_service.find_by_id(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="The document could not be found.")
+    path = document_service.resolve_path(document["name"])
+    return FileResponse(path=path, filename=path.name)
 
 
 @router.delete("/documents/{document_id}")
@@ -248,8 +248,21 @@ def delete_document(
     document = document_service.find_by_id(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="The document could not be found.")
+    path = document_service.resolve_path(document["name"])
+    original = path.read_bytes()
     document_service.delete_document(document["name"])
-    return {"status": "deleted", "document_id": document_id}
+    try:
+        rebuild_index()
+    except (RuntimeError, OSError, ValueError) as exc:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(original)
+        logger.warning("Document deletion rolled back document_id=%s error=%s", document_id, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="The document could not be removed from the knowledge index. Deletion was rolled back.",
+        ) from exc
+    document_service.remove_index_status(document_id)
+    return {"status": "deleted", "document_id": document_id, "index_refreshed": True}
 
 
 @router.post("/documents/{document_id}/index")
@@ -260,6 +273,11 @@ def index_document(
     document = document_service.find_by_id(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="The document could not be found.")
+    indexed = _rebuild_document_index(document_id, document)
+    return {"status": "indexed", "document": indexed}
+
+
+def _rebuild_document_index(document_id: str, document: dict) -> dict:
     document_service.record_index_result(document_id, "indexing")
     try:
         rebuild_index()
@@ -272,10 +290,7 @@ def index_document(
             detail="Index rebuild failed. Check document readability and OpenAI configuration.",
         ) from exc
     document_service.record_index_result(document_id, "indexed")
-    return {
-        "status": "indexed",
-        "document": document_service.find_by_id(document_id) or document,
-    }
+    return document_service.find_by_id(document_id) or document
 
 
 @router.post("/feedback", status_code=status.HTTP_201_CREATED)
@@ -297,6 +312,7 @@ def add_feedback(
                 payload.rating,
                 payload.comment,
                 payload.question,
+                payload.answer,
             )
     except WorkflowValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors) from exc
@@ -305,15 +321,32 @@ def add_feedback(
     return {"feedback": feedback}
 
 
+@router.get("/admin/feedback")
+def admin_feedback(
+    sentiment: str = "all",
+    limit: int = 200,
+    _: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> dict:
+    try:
+        items = workflow_service.list_assistant_feedback(sentiment=sentiment, limit=limit)
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    return {"feedback": items}
+
+
 @router.get("/admin/metrics")
 def admin_metrics(
     _: DemoIdentity = Depends(require_roles("knowledge_admin")),
 ) -> dict:
     metrics = workflow_service.metrics()
     logs = log_service.read(1000)
-    question_count = len(logs)
-    grounded_count = sum(1 for entry in logs if entry.get("sources"))
-    unanswered = _unanswered_entries(logs)
+    workplace_logs = [entry for entry in logs if entry.get("intent") == "work"]
+    question_count = len(workplace_logs)
+    grounded_count = sum(1 for entry in workplace_logs if entry.get("sources"))
+    unanswered = _unanswered_entries(
+        workplace_logs,
+        workflow_service.reviewed_quality_item_ids(),
+    )
     total_feedback = metrics["feedback"] + metrics["assistant_feedback"]
     metrics.update(
         {
@@ -331,8 +364,7 @@ def admin_metrics(
                 1,
             ),
             "requests_created": metrics["total_requests"],
-            "requests_approved": metrics["requests_by_status"].get("approved", 0)
-            + metrics["requests_by_status"].get("completed", 0),
+            "requests_approved": metrics["requests_by_status"].get("approved", 0),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -343,7 +375,68 @@ def admin_metrics(
 def unanswered_questions(
     _: DemoIdentity = Depends(require_roles("knowledge_admin")),
 ) -> dict:
-    return {"questions": _unanswered_entries(log_service.read(1000))}
+    reviewed = workflow_service.reviewed_quality_item_ids()
+    return {"questions": _unanswered_entries(log_service.read(1000), reviewed)}
+
+
+@router.post("/admin/quality/{item_id}")
+def review_quality_item(
+    item_id: str,
+    payload: QualityReviewAction,
+    _: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> dict:
+    try:
+        review = workflow_service.review_quality_item(item_id, payload.action)
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    return {"review": review}
+
+
+@router.get("/admin/ai-settings")
+def get_ai_settings(
+    _: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> dict:
+    return {
+        "settings": ai_settings_service.get(),
+        "system_prompt": load_system_prompt(),
+        "default_system_prompt": DEFAULT_SYSTEM_PROMPT,
+    }
+
+
+@router.put("/admin/ai-settings")
+def update_ai_settings(
+    payload: AISettingsUpdate,
+    _: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> dict:
+    settings = ai_settings_service.save(payload.settings.model_dump())
+    save_system_prompt(payload.system_prompt)
+    return {
+        "settings": settings,
+        "system_prompt": load_system_prompt(),
+        "default_system_prompt": DEFAULT_SYSTEM_PROMPT,
+    }
+
+
+@router.post("/admin/ai-settings/test")
+def test_ai_settings(
+    payload: AISettingsTestRequest,
+    identity: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> dict:
+    started = time.perf_counter()
+    response = chat_service.handle_chat(
+        V1ChatRequest(messages=[{"role": "user", "content": payload.question}]),
+        created_by=identity.id,
+        settings_override=payload.settings.model_dump(),
+        system_prompt_override=payload.system_prompt,
+        log_outcome=False,
+        allow_workflow=False,
+    )
+    return {
+        "answer": response.message.content,
+        "intent": response.intent,
+        "sources": [source.model_dump() for source in response.sources or []],
+        "latency_ms": round((time.perf_counter() - started) * 1000),
+    }
 
 
 @router.get("/admin/system-prompt")
@@ -395,13 +488,6 @@ def _manager_decision(
             detail="A manager comment is required when declining a request.",
         )
     request = _request_for_identity(request_id, identity)
-    if request["status"] == "submitted":
-        request = workflow_service.transition(
-            request_id,
-            "in_review",
-            actor=identity.id,
-            comment="Manager opened the request for review.",
-        )
     if request["status"] != "in_review":
         raise HTTPException(
             status_code=409,
@@ -454,18 +540,29 @@ def _stream_chat_response(response: ChatResponse) -> Iterator[str]:
     )
 
 
-def _unanswered_entries(logs: list[dict]) -> list[dict]:
+def _unanswered_entries(logs: list[dict], reviewed_ids: set[str] | None = None) -> list[dict]:
     unanswered: list[dict] = []
+    reviewed = reviewed_ids or set()
     for entry in reversed(logs):
         assistant = str(entry.get("assistant", ""))
-        if entry.get("intent") != "invalid" and "could not find a reliable answer" not in assistant:
+        if entry.get("intent") != "work":
+            continue
+        if entry.get("sources"):
+            continue
+        if "could not find a reliable answer" not in assistant:
+            continue
+        question = str(entry.get("user", "Question text was not retained"))
+        item_id = hashlib.sha256(f"{entry.get('ts', '')}\n{question}".encode("utf-8")).hexdigest()[
+            :16
+        ]
+        if item_id in reviewed:
             continue
         unanswered.append(
             {
+                "id": item_id,
                 "timestamp": entry.get("ts"),
-                "question": entry.get("user", "Question text was not retained"),
+                "question": question,
                 "assistant": assistant,
-                "intent": entry.get("intent"),
             }
         )
     return unanswered[:50]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from api.schemas import ChatRequest
 
@@ -37,6 +37,45 @@ class FeedbackCreate(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     comment: str = ""
     question: str = ""
+    answer: str = ""
+
+
+class AISettingsPayload(BaseModel):
+    strict_grounding: bool = True
+    concise_answers: bool = True
+    ask_clarifying_questions: bool = True
+    suggest_next_steps: bool = True
+    show_sources: bool = True
+    auto_index_uploads: bool = True
+
+
+class AISettingsUpdate(BaseModel):
+    settings: AISettingsPayload
+    system_prompt: str = Field(..., min_length=1)
+
+    @field_validator("system_prompt")
+    @classmethod
+    def validate_system_prompt(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("System prompt cannot be empty.")
+        return cleaned
+
+
+class AISettingsTestRequest(AISettingsUpdate):
+    question: str = Field(..., min_length=1)
+
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Test question cannot be empty.")
+        return cleaned
+
+
+class QualityReviewAction(BaseModel):
+    action: Literal["resolved", "ignored"]
 
 
 class V1ChatRequest(ChatRequest):

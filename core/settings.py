@@ -58,6 +58,7 @@ INDEX_STATUS_PATH = _resolve_path(os.getenv("INDEX_STATUS_PATH", "data/index_sta
 LOG_PATH = _resolve_path(os.getenv("LOG_PATH", "data/chat_logs.jsonl"))
 WORKFLOW_DB = _resolve_path(os.getenv("WORKFLOW_DB", "data/workflow.db"))
 SYSTEM_PROMPT_PATH = _resolve_path(os.getenv("SYSTEM_PROMPT_PATH", "data/system_prompt.txt"))
+AI_SETTINGS_PATH = _resolve_path(os.getenv("AI_SETTINGS_PATH", "data/ai_settings.json"))
 
 LOG_USER_TEXT_MODE = (os.getenv("LOG_USER_TEXT_MODE", "masked") or "masked").strip().lower()
 

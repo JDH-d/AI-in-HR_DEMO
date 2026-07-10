@@ -50,6 +50,16 @@ class DocumentReaderTests(unittest.TestCase):
         self.assertEqual(docs[0]["category"], "Leave")
         self.assertEqual(docs[0]["version"], "2026.2")
 
+    def test_uploaded_markdown_uses_first_h1_as_document_title(self) -> None:
+        (self.temp_dir / "Custom.md").write_text(
+            "# Custom Handbook\n\n## Internal section\n\nPolicy content.",
+            encoding="utf-8",
+        )
+
+        docs = load_documents(self.temp_dir)
+
+        self.assertEqual(docs[0]["title"], "Custom Handbook")
+
     def test_load_documents_skips_duplicate_content(self) -> None:
         (self.temp_dir / "first.md").write_text("Same policy content.", encoding="utf-8")
         (self.temp_dir / "second.txt").write_text("Same   policy content.", encoding="utf-8")

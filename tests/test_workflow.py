@@ -43,21 +43,21 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(result["approver"], "Manager")
         self.assertEqual(result["validation_errors"], [])
 
-    def test_confirmation_validates_and_submits_draft(self) -> None:
+    def test_confirmation_validates_and_sends_draft_for_review(self) -> None:
         draft = self._draft()
 
-        submitted = self.service.confirm_draft(
+        in_review = self.service.confirm_draft(
             draft["id"],
             "demo-user",
             {"comment": "Family vacation"},
         )
 
-        self.assertEqual(submitted["status"], "submitted")
-        self.assertEqual(submitted["duration_days"], 3)
+        self.assertEqual(in_review["status"], "in_review")
+        self.assertEqual(in_review["duration_days"], 3)
         history = self.service.history(draft["id"])
         self.assertEqual(
             [event["to_status"] for event in history["events"]],
-            ["draft", "submitted"],
+            ["draft", "in_review"],
         )
 
     def test_invalid_calendar_date_cannot_be_confirmed(self) -> None:
@@ -112,17 +112,14 @@ class WorkflowServiceTests(unittest.TestCase):
 
     def test_state_machine_blocks_invalid_transition(self) -> None:
         draft = self._draft()
-        submitted = self.service.confirm_draft(draft["id"], "demo-user", {})
+        in_review = self.service.confirm_draft(draft["id"], "demo-user", {})
 
-        with self.assertRaises(InvalidTransitionError):
-            self.service.transition(submitted["id"], "approved")
+        with self.assertRaises(WorkflowValidationError):
+            self.service.transition(in_review["id"], "completed")
 
-        in_review = self.service.transition(submitted["id"], "in_review")
         approved = self.service.transition(in_review["id"], "approved")
-        completed = self.service.transition(approved["id"], "completed")
-        self.assertEqual(completed["status"], "completed")
         with self.assertRaises(InvalidTransitionError):
-            self.service.transition(completed["id"], "in_review")
+            self.service.transition(approved["id"], "in_review")
 
     def test_applicant_can_cancel_and_event_is_recorded(self) -> None:
         draft = self._draft()
@@ -156,6 +153,9 @@ class WorkflowServiceTests(unittest.TestCase):
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 ).fetchall()
             }
+            feedback_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(assistant_feedback)").fetchall()
+            }
 
         self.assertTrue(
             {
@@ -164,8 +164,21 @@ class WorkflowServiceTests(unittest.TestCase):
                 "request_events",
                 "request_comments",
                 "feedback",
+                "quality_reviews",
             }.issubset(tables)
         )
+        self.assertIn("answer", feedback_columns)
+
+    def test_quality_review_actions_are_persisted_and_replaceable(self) -> None:
+        first = self.service.review_quality_item("gap-123", "ignored")
+        second = self.service.review_quality_item("gap-123", "resolved")
+
+        self.assertEqual(first["action"], "ignored")
+        self.assertEqual(second["action"], "resolved")
+        self.assertEqual(self.service.reviewed_quality_item_ids(), {"gap-123"})
+
+        with self.assertRaises(WorkflowValidationError):
+            self.service.review_quality_item("gap-456", "archive")
 
     def test_stage_one_database_is_migrated_without_losing_request(self) -> None:
         legacy_path = self.temp_dir / "legacy.db"
@@ -199,10 +212,67 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0]["id"], "legacy-1")
         self.assertEqual(requests[0]["type"], "pto")
-        self.assertEqual(requests[0]["status"], "submitted")
+        self.assertEqual(requests[0]["status"], "in_review")
         self.assertEqual(
             migrated.history("legacy-1")["events"][0]["event_type"],
             "legacy_request_migrated",
+        )
+
+    def test_submitted_status_from_v2_is_migrated_to_in_review(self) -> None:
+        draft = self._draft()
+        request = self.service.confirm_draft(draft["id"], "demo-user", {})
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE workflow_requests SET status = 'submitted' WHERE id = ?",
+                (request["id"],),
+            )
+            conn.execute(
+                "UPDATE request_events SET to_status = 'submitted' WHERE to_status = 'in_review'"
+            )
+            conn.execute("PRAGMA user_version = 2")
+            conn.commit()
+
+        migrated = WorkflowService(str(self.db_path))
+        current = migrated.get_for_user(request["id"], "demo-user")
+        history = migrated.history(request["id"])
+
+        assert current is not None
+        self.assertEqual(current["status"], "in_review")
+        self.assertEqual(
+            [event["to_status"] for event in history["events"]],
+            ["draft", "in_review"],
+        )
+
+    def test_completed_status_from_v3_is_migrated_to_approved(self) -> None:
+        draft = self._draft()
+        request = self.service.confirm_draft(draft["id"], "demo-user", {})
+        self.service.transition(request["id"], "approved", actor="manager.demo")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE workflow_requests SET status = 'completed' WHERE id = ?",
+                (request["id"],),
+            )
+            conn.execute(
+                """
+                INSERT INTO request_events
+                (id, request_id, event_type, from_status, to_status, actor, details, created_at)
+                VALUES ('completed-event', ?, 'status_changed', 'approved', 'completed',
+                        'manager.demo', '{}', '2030-04-01T12:00:00+00:00')
+                """,
+                (request["id"],),
+            )
+            conn.execute("PRAGMA user_version = 3")
+            conn.commit()
+
+        migrated = WorkflowService(str(self.db_path))
+        current = migrated.get_for_user(request["id"], "demo-user")
+        history = migrated.history(request["id"])
+
+        assert current is not None
+        self.assertEqual(current["status"], "approved")
+        self.assertEqual(
+            [event["to_status"] for event in history["events"]],
+            ["draft", "in_review", "approved"],
         )
 
     def _draft(self) -> dict:

@@ -115,8 +115,8 @@ try {
     }
 
     $requestId = $workflow.workflow_request.id
-    $submitted = Invoke-RestMethod -Uri "$baseUrl/api/v1/requests/$requestId/submit" -Method Post -ContentType "application/json" -Headers $employeeHeaders -Body "{}" -TimeoutSec 10
-    if ($submitted.request.status -ne "submitted") {
+    $reviewRequest = Invoke-RestMethod -Uri "$baseUrl/api/v1/requests/$requestId/submit" -Method Post -ContentType "application/json" -Headers $employeeHeaders -Body "{}" -TimeoutSec 10
+    if ($reviewRequest.request.status -ne "in_review") {
         throw "Workflow submit route did not submit the draft."
     }
 

@@ -35,7 +35,7 @@ class IndexTests(unittest.TestCase):
         item = payload["items"][0]
         self.assertEqual(payload["schema_version"], index.INDEX_SCHEMA_VERSION)
         self.assertEqual(item["section"], "Password Reset")
-        self.assertEqual(item["title"], "Password Reset")
+        self.assertEqual(item["title"], "Company")
         self.assertEqual(item["category"], "General")
         self.assertEqual(item["version"], "unversioned")
 
