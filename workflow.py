@@ -13,20 +13,16 @@ from typing import Callable
 VALID_TYPES = {"pto", "sick_leave", "document"}
 VALID_STATUSES = {
     "draft",
-    "submitted",
     "in_review",
     "approved",
     "declined",
-    "completed",
     "cancelled",
 }
 ALLOWED_TRANSITIONS = {
-    "draft": {"submitted", "cancelled"},
-    "submitted": {"in_review", "cancelled"},
+    "draft": {"in_review", "cancelled"},
     "in_review": {"approved", "declined", "cancelled"},
-    "approved": {"completed"},
+    "approved": set(),
     "declined": set(),
-    "completed": set(),
     "cancelled": set(),
 }
 
@@ -313,6 +309,7 @@ class WorkflowStore:
 
     def _init_db(self) -> None:
         with closing(self._connect()) as conn:
+            schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
             legacy_table = self._prepare_legacy_table(conn)
             conn.executescript(
                 """
@@ -375,6 +372,7 @@ class WorkflowStore:
                     rating INTEGER NOT NULL,
                     comment TEXT NOT NULL,
                     question TEXT NOT NULL,
+                    answer TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
 
@@ -388,7 +386,51 @@ class WorkflowStore:
             )
             if legacy_table:
                 self._migrate_legacy_rows(conn, legacy_table)
-            conn.execute("PRAGMA user_version = 2")
+            if schema_version < 3:
+                conn.execute(
+                    "UPDATE workflow_requests SET status = 'in_review' WHERE status = 'submitted'"
+                )
+                conn.execute(
+                    "UPDATE request_events SET from_status = 'in_review' WHERE from_status = 'submitted'"
+                )
+                conn.execute(
+                    "UPDATE request_events SET to_status = 'in_review' WHERE to_status = 'submitted'"
+                )
+                conn.execute(
+                    """
+                    DELETE FROM request_events
+                    WHERE event_type = 'status_changed'
+                      AND from_status = 'in_review'
+                      AND to_status = 'in_review'
+                    """
+                )
+            if schema_version < 4:
+                conn.execute(
+                    "UPDATE workflow_requests SET status = 'approved' WHERE status = 'completed'"
+                )
+                conn.execute(
+                    "UPDATE request_events SET from_status = 'approved' WHERE from_status = 'completed'"
+                )
+                conn.execute(
+                    "UPDATE request_events SET to_status = 'approved' WHERE to_status = 'completed'"
+                )
+                conn.execute(
+                    """
+                    DELETE FROM request_events
+                    WHERE event_type = 'status_changed'
+                      AND from_status = 'approved'
+                      AND to_status = 'approved'
+                    """
+                )
+            assistant_feedback_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(assistant_feedback)").fetchall()
+            }
+            if "answer" not in assistant_feedback_columns:
+                conn.execute(
+                    "ALTER TABLE assistant_feedback ADD COLUMN answer TEXT NOT NULL DEFAULT ''"
+                )
+            conn.execute("PRAGMA user_version = 5")
             conn.commit()
 
     @staticmethod
@@ -410,10 +452,10 @@ class WorkflowStore:
     def _migrate_legacy_rows(self, conn: sqlite3.Connection, legacy_table: str) -> None:
         status_map = {
             "new": "draft",
-            "pending": "submitted",
+            "pending": "in_review",
             "approved": "approved",
             "declined": "declined",
-            "done": "completed",
+            "done": "approved",
         }
         rows = conn.execute(f'SELECT * FROM "{legacy_table}"').fetchall()
         for row in rows:
@@ -426,7 +468,7 @@ class WorkflowStore:
             applicant = _normalize_user(data.get("created_by"), "anonymous")
             approver = _normalize_user(data.get("assigned_to"), "Manager")
             created_at = data.get("created_at") or _utc_now()
-            status = status_map.get(str(data.get("status", "")).lower(), "submitted")
+            status = status_map.get(str(data.get("status", "")).lower(), "in_review")
             self._ensure_user(conn, applicant, "employee")
             self._ensure_user(conn, approver, "approver")
             conn.execute(
@@ -591,7 +633,7 @@ class WorkflowStore:
             if row["applicant"] != actor:
                 raise WorkflowPermissionError("Only the applicant can submit this draft.")
             if row["status"] != "draft":
-                raise InvalidTransitionError(row["status"], "submitted")
+                raise InvalidTransitionError(row["status"], "in_review")
 
             request_type = str(fields.get("type") or row["type"]).strip().lower()
             start_date = _optional_string(fields.get("start_date", row["start_date"]))
@@ -608,7 +650,7 @@ class WorkflowStore:
                 """
                 UPDATE workflow_requests
                 SET type = ?, start_date = ?, end_date = ?, duration_days = ?, comment = ?,
-                    approver = ?, status = 'submitted', updated_at = ?
+                    approver = ?, status = 'in_review', updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -627,7 +669,7 @@ class WorkflowStore:
                 request_id,
                 "status_changed",
                 "draft",
-                "submitted",
+                "in_review",
                 actor,
                 {"confirmed_fields": True},
             )
@@ -807,6 +849,7 @@ class WorkflowStore:
         rating: int,
         comment: str,
         question: str,
+        answer: str,
     ) -> dict:
         if rating < 1 or rating > 5:
             raise WorkflowValidationError(["Rating must be between 1 and 5."])
@@ -817,10 +860,18 @@ class WorkflowStore:
             conn.execute(
                 """
                 INSERT INTO assistant_feedback
-                (id, user_id, rating, comment, question, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (id, user_id, rating, comment, question, answer, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (feedback_id, user_id, rating, comment.strip(), question.strip(), created_at),
+                (
+                    feedback_id,
+                    user_id,
+                    rating,
+                    comment.strip(),
+                    question.strip(),
+                    answer.strip(),
+                    created_at,
+                ),
             )
             conn.commit()
         return {
@@ -829,8 +880,37 @@ class WorkflowStore:
             "rating": rating,
             "comment": comment.strip(),
             "question": question.strip(),
+            "answer": answer.strip(),
             "created_at": created_at,
         }
+
+    def list_assistant_feedback(self, sentiment: str = "all", limit: int = 200) -> list[dict]:
+        bounded = max(1, min(limit, 500))
+        where = {
+            "positive": "WHERE rating >= 4",
+            "negative": "WHERE rating <= 2",
+            "all": "",
+        }.get(sentiment)
+        if where is None:
+            raise WorkflowValidationError(["Unsupported feedback sentiment filter."])
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT id, rating, comment, question, answer, created_at
+                FROM assistant_feedback
+                {where}
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ?
+                """,
+                (bounded,),
+            ).fetchall()
+        return [
+            {
+                **dict(row),
+                "sentiment": "positive" if row["rating"] >= 4 else "negative",
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def _require_request(conn: sqlite3.Connection, request_id: str) -> sqlite3.Row:
@@ -959,8 +1039,12 @@ class WorkflowService:
         rating: int,
         comment: str = "",
         question: str = "",
+        answer: str = "",
     ) -> dict:
-        return self.store.add_assistant_feedback(user_id, rating, comment, question)
+        return self.store.add_assistant_feedback(user_id, rating, comment, question, answer)
+
+    def list_assistant_feedback(self, sentiment: str = "all", limit: int = 200) -> list[dict]:
+        return self.store.list_assistant_feedback(sentiment=sentiment, limit=limit)
 
 
 def _optional_string(value: object) -> str | None:

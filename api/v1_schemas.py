@@ -37,6 +37,7 @@ class FeedbackCreate(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     comment: str = ""
     question: str = ""
+    answer: str = ""
 
 
 class V1ChatRequest(ChatRequest):

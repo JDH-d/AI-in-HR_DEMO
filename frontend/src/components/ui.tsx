@@ -19,21 +19,28 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
     tone === "neutral" && "border-line bg-raised text-muted", tone === "success" && "border-lime/25 bg-lime-soft text-lime",
     tone === "warning" && "border-coral/25 bg-coral/10 text-coral", tone === "danger" && "border-danger/25 bg-danger/10 text-danger")}>{children}</span>;
 }
-export function Drawer({ open, onOpenChange, title, description, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; description?: string; children: ReactNode }) {
+export function Drawer({ open, onOpenChange, title, description, children, placement = "side" }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; description?: string; children: ReactNode; placement?: "side" | "center" }) {
   return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal>
     <Dialog.Overlay className="fixed inset-0 z-40 bg-black/65 backdrop-blur-sm" />
-    <Dialog.Content className="soft-shadow fixed inset-y-0 right-0 z-50 w-full max-w-[520px] overflow-y-auto border-l border-line bg-panel p-6 sm:p-8">
+    <Dialog.Content className={clsx(
+      "soft-shadow fixed z-50 w-full overflow-y-auto border border-line bg-panel p-6 sm:p-8",
+      placement === "side" && "inset-y-0 right-0 max-w-[520px] border-y-0 border-r-0",
+      placement === "center" && "left-1/2 top-1/2 max-h-[calc(100vh-2rem)] max-w-[780px] -translate-x-1/2 -translate-y-1/2 rounded-3xl",
+    )}>
       <div className="mb-8 flex items-start justify-between gap-4"><div><Dialog.Title className="text-2xl font-semibold">{title}</Dialog.Title>{description && <Dialog.Description className="mt-2 text-sm leading-6 text-muted">{description}</Dialog.Description>}</div>
-      <Dialog.Close asChild><Button tone="ghost" aria-label="Close drawer" className="h-10 w-10 px-0"><X size={18}/></Button></Dialog.Close></div>{children}
+      <Dialog.Close asChild><Button tone="ghost" aria-label="Close drawer" className="h-10 w-10" style={{ padding: 0 }}><X className="shrink-0" size={20}/></Button></Dialog.Close></div>{children}
     </Dialog.Content></Dialog.Portal></Dialog.Root>;
 }
 export function Hint({ label, children }: { label: string; children: ReactNode }) {
   return <Tooltip.Provider delayDuration={300}><Tooltip.Root><Tooltip.Trigger asChild>{children}</Tooltip.Trigger><Tooltip.Portal><Tooltip.Content sideOffset={8} className="z-[70] rounded-lg bg-cream px-2.5 py-1.5 text-xs text-ink">{label}</Tooltip.Content></Tooltip.Portal></Tooltip.Root></Tooltip.Provider>;
 }
 export const fieldClass = "focus-ring w-full rounded-xl border border-line bg-ink px-3.5 py-3 text-sm text-cream placeholder:text-muted/60";
+export function formatStatus(status: string): string {
+  return status.replaceAll("_", " ");
+}
 export function statusTone(status: string): "neutral" | "success" | "warning" | "danger" {
-  if (["approved","completed","indexed"].includes(status)) return "success";
-  if (["submitted","in_review","indexing","draft","pending"].includes(status)) return "warning";
+  if (["approved","indexed"].includes(status)) return "success";
+  if (["in_review","indexing","draft","pending"].includes(status)) return "warning";
   if (["declined","cancelled","error"].includes(status)) return "danger";
   return "neutral";
 }

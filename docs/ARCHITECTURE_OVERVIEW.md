@@ -55,17 +55,23 @@ document-based RAG, and SQLite workflow storage.
 5. `ChatRouter` determines the intent and whether a prior topic should be reused.
 6. An explicit action can create only a `draft`; policy questions continue to RAG.
 7. The employee reviews extracted fields in a confirmation form. Submission validates
-   real ISO calendar dates and transitions `draft -> submitted`.
+   real ISO calendar dates and transitions `draft -> in_review`.
 8. Manager actions follow protected transitions and every change creates a
    `request_events` audit entry.
 9. If the message needs retrieval, `RAGService` verifies the versioned index, performs hybrid lexical/vector retrieval, deduplicates sections, and builds the answer.
 10. The final outcome is converted back to API DTOs and logged through `ChatLogService`.
+11. Employee answer feedback stores the rated question and exact assistant answer;
+    the Knowledge Admin API exposes an anonymized review projection without `user_id`.
 
 ## Workflow Storage
 
 SQLite contains `users`, `workflow_requests`, `request_events`,
-`request_comments`, and `feedback`. Existing Stage 1 request databases are
+`request_comments`, `feedback`, and `assistant_feedback`. Existing databases are
 migrated automatically when opened.
+
+Knowledge documents remain filesystem-backed. Upload and deletion operations are
+restricted to Knowledge Admins, and each deletion rebuilds the RAG index before it
+is reported as successful.
 
 Retrieval quality is guarded by `evals/rag_questions.json` and the deterministic
 `python -m scripts.run_rag_eval` command.

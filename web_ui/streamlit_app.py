@@ -322,7 +322,7 @@ def _render_workflow_confirmation(
                 data = safe_json(response)
                 if response.status_code == 200 and isinstance(data, dict):
                     message["workflow_request"] = data.get("request")
-                    message["content"] = "Request confirmed and submitted for review."
+                    message["content"] = "Request confirmed and sent for review."
                     st.session_state.messages[message_index] = message
                     st.rerun()
                 st.error(format_http_error(response, data))
@@ -699,7 +699,7 @@ def main() -> None:
                                     "created_at": request.get("created_at"),
                                 }
                             )
-                            if status in {"draft", "submitted", "in_review"}:
+                            if status in {"draft", "in_review"}:
                                 if st.button(
                                     "Cancel request",
                                     key=f"cancel-list-{request_id}",

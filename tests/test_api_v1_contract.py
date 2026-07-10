@@ -33,12 +33,16 @@ class APIV1ContractTests(unittest.TestCase):
             ("POST", "/api/v1/requests/{request_id}/decline"),
             ("GET", "/api/v1/documents"),
             ("POST", "/api/v1/documents"),
+            ("GET", "/api/v1/documents/{document_id}/download"),
+            ("DELETE", "/api/v1/documents/{document_id}"),
             ("POST", "/api/v1/documents/{document_id}/index"),
             ("POST", "/api/v1/feedback"),
             ("GET", "/api/v1/admin/metrics"),
             ("GET", "/api/v1/admin/unanswered"),
+            ("GET", "/api/v1/admin/feedback"),
         }
         self.assertTrue(expected.issubset(routes))
+        self.assertNotIn(("POST", "/api/v1/requests/{request_id}/complete"), routes)
 
     def test_chat_requires_bearer_token_and_ignores_x_user_identity(self) -> None:
         payload = {"messages": [{"role": "user", "content": "What can you help with?"}]}
@@ -109,6 +113,53 @@ class APIV1ContractTests(unittest.TestCase):
             self.assertEqual(admin.status_code, 200)
             self.assertEqual(len(admin.json()["documents"]), 1)
             self.assertTrue(admin.json()["documents"][0]["id"])
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_admin_can_upload_download_and_delete_document(self) -> None:
+        temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        service = DocumentService(
+            temp_dir,
+            index_path=temp_dir / "index.json",
+            index_status_path=temp_dir / "index_status.json",
+        )
+        content = b"# Remote Work\n\nEmployees may work remotely two days per week."
+        try:
+            with (
+                patch("api.v1_routes.document_service", service),
+                patch("api.v1_routes.rebuild_index") as rebuild,
+            ):
+                uploaded = self.client.post(
+                    "/api/v1/documents",
+                    headers=self._headers("knowledge_admin"),
+                    files={"file": ("Remote_Work.md", content, "text/markdown")},
+                )
+                document_id = uploaded.json()["document"]["id"]
+                downloaded = self.client.get(
+                    f"/api/v1/documents/{document_id}/download",
+                    headers=self._headers("knowledge_admin"),
+                )
+                forbidden = self.client.get(
+                    f"/api/v1/documents/{document_id}/download",
+                    headers=self._headers("employee"),
+                )
+                deleted = self.client.delete(
+                    f"/api/v1/documents/{document_id}",
+                    headers=self._headers("knowledge_admin"),
+                )
+
+            self.assertEqual(uploaded.status_code, 201)
+            self.assertEqual(uploaded.json()["document"]["index_status"], "pending")
+            self.assertEqual(downloaded.status_code, 200)
+            self.assertEqual(downloaded.content, content)
+            self.assertIn("Remote_Work.md", downloaded.headers["content-disposition"])
+            self.assertEqual(forbidden.status_code, 403)
+            self.assertEqual(deleted.status_code, 200)
+            self.assertTrue(deleted.json()["index_refreshed"])
+            self.assertFalse((temp_dir / "Remote_Work.md").exists())
+            rebuild.assert_called_once()
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

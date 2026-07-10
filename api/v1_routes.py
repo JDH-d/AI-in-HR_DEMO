@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Iterator
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from api.schemas import ChatResponse, SystemPromptUpdate, WorkflowCommentCreate
 from api.v1_dependencies import current_identity, require_roles
@@ -183,25 +183,6 @@ def decline_request(
     return {"request": _manager_decision(request_id, "declined", identity, payload.comment)}
 
 
-@router.post("/requests/{request_id}/complete")
-def complete_request(
-    request_id: str,
-    payload: DecisionRequest,
-    identity: DemoIdentity = Depends(require_roles("manager")),
-) -> dict:
-    _request_for_identity(request_id, identity)
-    try:
-        request = workflow_service.transition(
-            request_id,
-            "completed",
-            actor=identity.id,
-            comment=payload.comment,
-        )
-    except InvalidTransitionError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"request": request}
-
-
 @router.post("/requests/{request_id}/comments", status_code=status.HTTP_201_CREATED)
 def add_manager_comment(
     request_id: str,
@@ -240,6 +221,18 @@ def upload_document(
     return {"document": document or {"id": document_service.document_id(name), "name": name}}
 
 
+@router.get("/documents/{document_id}/download")
+def download_document(
+    document_id: str,
+    _: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> FileResponse:
+    document = document_service.find_by_id(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="The document could not be found.")
+    path = document_service.resolve_path(document["name"])
+    return FileResponse(path=path, filename=path.name)
+
+
 @router.delete("/documents/{document_id}")
 def delete_document(
     document_id: str,
@@ -248,8 +241,21 @@ def delete_document(
     document = document_service.find_by_id(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="The document could not be found.")
+    path = document_service.resolve_path(document["name"])
+    original = path.read_bytes()
     document_service.delete_document(document["name"])
-    return {"status": "deleted", "document_id": document_id}
+    try:
+        rebuild_index()
+    except (RuntimeError, OSError, ValueError) as exc:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(original)
+        logger.warning("Document deletion rolled back document_id=%s error=%s", document_id, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="The document could not be removed from the knowledge index. Deletion was rolled back.",
+        ) from exc
+    document_service.remove_index_status(document_id)
+    return {"status": "deleted", "document_id": document_id, "index_refreshed": True}
 
 
 @router.post("/documents/{document_id}/index")
@@ -297,12 +303,26 @@ def add_feedback(
                 payload.rating,
                 payload.comment,
                 payload.question,
+                payload.answer,
             )
     except WorkflowValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors) from exc
     except WorkflowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"feedback": feedback}
+
+
+@router.get("/admin/feedback")
+def admin_feedback(
+    sentiment: str = "all",
+    limit: int = 200,
+    _: DemoIdentity = Depends(require_roles("knowledge_admin")),
+) -> dict:
+    try:
+        items = workflow_service.list_assistant_feedback(sentiment=sentiment, limit=limit)
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    return {"feedback": items}
 
 
 @router.get("/admin/metrics")
@@ -331,8 +351,7 @@ def admin_metrics(
                 1,
             ),
             "requests_created": metrics["total_requests"],
-            "requests_approved": metrics["requests_by_status"].get("approved", 0)
-            + metrics["requests_by_status"].get("completed", 0),
+            "requests_approved": metrics["requests_by_status"].get("approved", 0),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -395,13 +414,6 @@ def _manager_decision(
             detail="A manager comment is required when declining a request.",
         )
     request = _request_for_identity(request_id, identity)
-    if request["status"] == "submitted":
-        request = workflow_service.transition(
-            request_id,
-            "in_review",
-            actor=identity.id,
-            comment="Manager opened the request for review.",
-        )
     if request["status"] != "in_review":
         raise HTTPException(
             status_code=409,

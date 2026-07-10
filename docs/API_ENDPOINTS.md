@@ -34,16 +34,24 @@ identities. `X-User` and arbitrary user IDs are not accepted.
 | `POST` | `/api/v1/requests/{id}/cancel` | Employee owner |
 | `POST` | `/api/v1/requests/{id}/approve` | Manager |
 | `POST` | `/api/v1/requests/{id}/decline` | Manager |
-| `POST` | `/api/v1/requests/{id}/complete` | Manager |
 | `POST` | `/api/v1/requests/{id}/comments` | Manager |
 | `GET` | `/api/v1/documents` | Knowledge Admin |
 | `POST` | `/api/v1/documents` | Knowledge Admin |
+| `GET` | `/api/v1/documents/{id}/download` | Knowledge Admin |
 | `DELETE` | `/api/v1/documents/{id}` | Knowledge Admin |
 | `POST` | `/api/v1/documents/{id}/index` | Knowledge Admin |
 | `POST` | `/api/v1/feedback` | Employee |
+| `GET` | `/api/v1/admin/feedback` | Knowledge Admin |
 | `GET` | `/api/v1/admin/metrics` | Knowledge Admin |
 | `GET/PUT` | `/api/v1/admin/system-prompt` | Knowledge Admin |
 | `GET` | `/api/v1/admin/logs` | Knowledge Admin |
+
+Document uploads accept `.md`, `.txt`, `.pdf`, and `.docx` files up to 10 MB.
+Deletion rebuilds the RAG index and is rolled back if the index cannot be refreshed.
+
+Assistant feedback stores the rated question and answer. The admin feedback route
+returns those conversation fields, rating, optional note, and timestamp without a
+user identifier.
 
 ## Request Example
 
@@ -59,10 +67,10 @@ identities. `X-User` and arbitrary user IDs are not accepted.
 ```
 
 This creates a `draft`. `POST /api/v1/requests/{id}/submit` performs final
-validation and transitions it to `submitted`.
+validation and transitions it to `in_review`.
 
-Manager `approve` and `decline` endpoints open a submitted request for review
-before applying the decision, producing separate audit events.
+Manager `approve` and `decline` endpoints apply a decision to a request that is
+already `in_review`, producing a single decision audit event.
 
 ## React Integration
 

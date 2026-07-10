@@ -43,7 +43,7 @@ class WorkflowV1APITests(unittest.TestCase):
         self.assertEqual(draft["status"], "draft")
         self.assertEqual(draft["applicant"], "employee.demo")
 
-        submitted = self.client.post(
+        sent_for_review = self.client.post(
             f"/api/v1/requests/{draft['id']}/submit",
             headers=self.employee_headers,
             json={},
@@ -58,17 +58,17 @@ class WorkflowV1APITests(unittest.TestCase):
             json={"request_id": draft["id"], "rating": 5, "comment": "Clear flow"},
         )
 
-        self.assertEqual(submitted.status_code, 200)
-        self.assertEqual(submitted.json()["request"]["status"], "submitted")
+        self.assertEqual(sent_for_review.status_code, 200)
+        self.assertEqual(sent_for_review.json()["request"]["status"], "in_review")
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(
             [event["to_status"] for event in detail.json()["events"]],
-            ["draft", "submitted"],
+            ["draft", "in_review"],
         )
         self.assertEqual(feedback.status_code, 201)
 
-    def test_manager_can_approve_submitted_request(self) -> None:
-        request = self._submitted_request()
+    def test_manager_can_approve_request_in_review(self) -> None:
+        request = self._review_request()
 
         approved = self.client.post(
             f"/api/v1/requests/{request['id']}/approve",
@@ -84,11 +84,11 @@ class WorkflowV1APITests(unittest.TestCase):
         self.assertEqual(approved.json()["request"]["status"], "approved")
         self.assertEqual(
             [event["to_status"] for event in detail.json()["events"]],
-            ["draft", "submitted", "in_review", "approved"],
+            ["draft", "in_review", "approved"],
         )
 
     def test_manager_can_decline_and_employee_cannot_decide(self) -> None:
-        request = self._submitted_request()
+        request = self._review_request()
 
         forbidden = self.client.post(
             f"/api/v1/requests/{request['id']}/approve",
@@ -104,9 +104,25 @@ class WorkflowV1APITests(unittest.TestCase):
         self.assertEqual(forbidden.status_code, 403)
         self.assertEqual(declined.status_code, 200)
         self.assertEqual(declined.json()["request"]["status"], "declined")
+        manager_detail = self.client.get(
+            f"/api/v1/requests/{request['id']}",
+            headers=self.manager_headers,
+        ).json()
+        employee_detail = self.client.get(
+            f"/api/v1/requests/{request['id']}",
+            headers=self.employee_headers,
+        ).json()
+        self.assertEqual(
+            manager_detail["events"][-1]["details"]["comment"],
+            "Coverage unavailable",
+        )
+        self.assertEqual(
+            employee_detail["events"][-1]["details"]["comment"],
+            "Coverage unavailable",
+        )
 
     def test_decline_requires_manager_comment(self) -> None:
-        request = self._submitted_request()
+        request = self._review_request()
         response = self.client.post(
             f"/api/v1/requests/{request['id']}/decline",
             headers=self.manager_headers,
@@ -123,7 +139,7 @@ class WorkflowV1APITests(unittest.TestCase):
         self.assertEqual(create.status_code, 403)
 
     def test_employee_can_cancel_own_request(self) -> None:
-        request = self._submitted_request()
+        request = self._review_request()
 
         cancelled = self.client.post(
             f"/api/v1/requests/{request['id']}/cancel",
@@ -151,12 +167,46 @@ class WorkflowV1APITests(unittest.TestCase):
         response = self.client.post(
             "/api/v1/feedback",
             headers=self.employee_headers,
-            json={"rating": 5, "question": "How often are salaries paid?"},
+            json={
+                "rating": 5,
+                "question": "How often are salaries paid?",
+                "answer": "Salaries are paid twice per month.",
+            },
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["feedback"]["rating"], 5)
 
-    def _submitted_request(self) -> dict:
+    def test_admin_feedback_view_is_anonymous_and_contains_question_and_answer(self) -> None:
+        self.client.post(
+            "/api/v1/feedback",
+            headers=self.employee_headers,
+            json={
+                "rating": 1,
+                "question": "Can I work remotely?",
+                "answer": "Remote work is never available.",
+                "comment": "This contradicts the policy.",
+            },
+        )
+
+        response = self.client.get(
+            "/api/v1/admin/feedback?sentiment=negative",
+            headers=self.admin_headers,
+        )
+        forbidden = self.client.get(
+            "/api/v1/admin/feedback",
+            headers=self.employee_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(forbidden.status_code, 403)
+        item = response.json()["feedback"][0]
+        self.assertEqual(item["question"], "Can I work remotely?")
+        self.assertEqual(item["answer"], "Remote work is never available.")
+        self.assertEqual(item["comment"], "This contradicts the policy.")
+        self.assertEqual(item["sentiment"], "negative")
+        self.assertNotIn("user_id", item)
+
+    def _review_request(self) -> dict:
         draft = self.service.create_structured_draft(
             request_type="pto",
             start_date="2030-04-01",

@@ -16,9 +16,10 @@ The demo is built around HR and IT policies because they are easy to understand 
 - Retrieval-augmented generation over internal documents
 - Source citations with document title, section, category, version, and highlighted evidence
 - Safe workflow creation for PTO, sick leave, and document requests
-- Confirmation drawer before a request is submitted
+- Confirmation drawer before a request is sent for review
 - Manager inbox with filters, counters, approval/decline actions, comments, and status timeline
-- Knowledge Admin dashboard for documents, indexing, unanswered questions, feedback, logs, and metrics
+- Knowledge Admin source library with document upload, download, deletion, indexing, and health metrics
+- Anonymized response feedback review with the original employee question and AI answer
 - Versioned `/api/v1` contract for a React frontend
 - Demo authentication with predefined Employee, Manager, and Knowledge Admin roles
 - Local-first setup with FastAPI, React, TypeScript, Vite, Tailwind CSS, SQLite, and OpenAI models
@@ -32,7 +33,7 @@ This project demonstrates a practical internal assistant that does more than gen
 - grounds answers in approved company documents;
 - creates requests only after explicit user confirmation;
 - gives managers a real approval queue instead of an unstructured chat transcript;
-- gives knowledge admins visibility into documents, indexing state, unanswered questions, feedback, and answer quality;
+- lets knowledge admins maintain source documents and investigate rated AI answers without exposing employee identity;
 - can be adapted to other industries by replacing documents, prompts, workflow types, and admin policies.
 
 For a business reviewer, the value proposition is simple: reduce repetitive internal support work while keeping answers tied to approved materials and preserving a clear audit trail for actions.
@@ -42,8 +43,8 @@ For a business reviewer, the value proposition is simple: reduce repetitive inte
 | Surface | Route | Purpose |
 |---------|-------|---------|
 | Employee Workspace | `/employee` | Ask policy questions, review sources, create confirmed workflow requests, send feedback. |
-| Manager Inbox | `/manager` | Review submitted requests, approve/decline, leave comments, inspect timeline history. |
-| Knowledge Admin | `/knowledge` | Monitor metrics, documents, indexing, feedback, unanswered questions, logs, and settings. |
+| Manager Inbox | `/manager` | Review incoming requests, approve/decline, leave comments, inspect timeline history. |
+| Knowledge Admin | `/knowledge` | Maintain source documents, review anonymized answer feedback, monitor knowledge gaps, metrics, and settings. |
 | API Docs | `/docs` | Inspect and test the FastAPI contract. |
 
 ## Demo Accounts
@@ -199,7 +200,7 @@ The app reads configuration from environment variables via `.env`.
 - Action-oriented messages prepare workflow drafts, but a request is created only after explicit confirmation.
 - Workflow transitions are protected: invalid status changes are rejected, and every meaningful change is written to `request_events`.
 - Managers can approve, decline with a required comment, add comments, and inspect the full timeline.
-- Knowledge Admins can inspect documents, indexing state, unanswered questions, feedback, logs, system settings, and demo metrics.
+- Knowledge Admins can upload, download, delete, and index documents; review anonymized rated conversations; and inspect knowledge gaps, settings, and metrics.
 
 ## Architecture
 
@@ -238,8 +239,11 @@ Core routes:
 - `POST /api/v1/requests/{id}/decline`
 - `GET /api/v1/documents`
 - `POST /api/v1/documents`
+- `GET /api/v1/documents/{id}/download`
+- `DELETE /api/v1/documents/{id}`
 - `POST /api/v1/documents/{id}/index`
 - `POST /api/v1/feedback`
+- `GET /api/v1/admin/feedback`
 - `GET /api/v1/admin/metrics`
 
 Full API notes are available in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).
@@ -261,8 +265,8 @@ Full API notes are available in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).
 4. Open sources and show the highlighted evidence excerpt.
 5. Ask for vacation from `2030-04-10` to `2030-04-12`.
 6. Review the prefilled drawer and submit the request.
-7. Sign in as `manager`, open the submitted request, and approve or decline it.
-8. Sign in as `knowledge_admin` and show metrics, documents, indexing state, unanswered questions, feedback, logs, and settings.
+7. Sign in as `manager`, open the request marked `in review`, and approve or decline it.
+8. Sign in as `knowledge_admin`, maintain the source library, and review anonymized positive and negative answer feedback.
 
 Detailed scripts are available in [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md).
 

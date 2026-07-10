@@ -15,6 +15,8 @@ from rag.nlp import SUPPORTED_TOPICS
 
 from .document_reader import load_documents
 
+MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+
 
 class DocumentService:
     def __init__(
@@ -80,6 +82,10 @@ class DocumentService:
             (document for document in self.list_documents() if document["id"] == document_id),
             None,
         )
+
+    def path_by_id(self, document_id: str) -> Path | None:
+        document = self.find_by_id(document_id)
+        return self.resolve_path(document["name"]) if document else None
 
     def record_index_result(
         self,
@@ -147,8 +153,21 @@ class DocumentService:
             raise HTTPException(status_code=400, detail="A valid document name is required.")
         self.documents_dir.mkdir(parents=True, exist_ok=True)
         target = self.documents_dir / safe_name
+        if target.exists():
+            raise HTTPException(
+                status_code=409,
+                detail="A document with this name already exists. Rename the file before uploading.",
+            )
+        content = file.file.read(MAX_DOCUMENT_BYTES + 1)
+        if not content:
+            raise HTTPException(status_code=400, detail="The uploaded document is empty.")
+        if len(content) > MAX_DOCUMENT_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="The document is larger than the 10 MB upload limit.",
+            )
         with target.open("wb") as handle:
-            handle.write(file.file.read())
+            handle.write(content)
         return safe_name
 
     def delete_document(self, name: str) -> None:
@@ -158,6 +177,20 @@ class DocumentService:
                 status_code=404, detail="The requested document could not be found."
             )
         path.unlink()
+
+    def remove_index_status(self, document_id: str) -> None:
+        if self.index_status_path is None:
+            return
+        statuses = self._read_index_statuses()
+        if statuses.pop(document_id, None) is None:
+            return
+        self.index_status_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self.index_status_path.with_suffix(f"{self.index_status_path.suffix}.tmp")
+        temp_path.write_text(
+            json.dumps(statuses, ensure_ascii=True, indent=2),
+            encoding="utf-8",
+        )
+        temp_path.replace(self.index_status_path)
 
     def resolve_path(self, name: str) -> Path:
         normalized = Path(os.path.normpath(name).lstrip("\\/"))
