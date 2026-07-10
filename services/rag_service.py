@@ -7,9 +7,10 @@ from collections.abc import Callable
 
 from rag.index import ensure_index, get_retriever
 from rag.nlp import Intent
-from rag.prompts import build_rag_prompt
+from rag.prompts import build_general_prompt, build_rag_prompt
 from rag.retriever import RetrieverError
 
+from .ai_settings_service import AI_SETTINGS_DEFAULTS, AISettingsService
 from .chat_fallbacks import ChatFallbackPolicy
 from .chat_models import ChatOutcome, ChatQuery, RetrievedChunk, RoutingDecision
 from .document_service import DocumentService
@@ -26,14 +27,27 @@ class RAGService:
         fallback_policy: ChatFallbackPolicy,
         index_ensurer: Callable[[], None] | None = None,
         retriever_provider: Callable | None = None,
+        ai_settings_service: AISettingsService | None = None,
     ) -> None:
         self.llm_service = llm_service
         self.document_service = document_service
         self.fallback_policy = fallback_policy
         self.index_ensurer = index_ensurer
         self.retriever_provider = retriever_provider
+        self.ai_settings_service = ai_settings_service
 
-    def answer_with_retrieval(self, query: ChatQuery, decision: RoutingDecision) -> ChatOutcome:
+    def answer_with_retrieval(
+        self,
+        query: ChatQuery,
+        decision: RoutingDecision,
+        settings: dict[str, bool] | None = None,
+        system_prompt: str | None = None,
+    ) -> ChatOutcome:
+        active_settings = settings or (
+            self.ai_settings_service.get()
+            if self.ai_settings_service is not None
+            else dict(AI_SETTINGS_DEFAULTS)
+        )
         latest_user = query.latest_user_message
         if latest_user is None:
             return ChatOutcome(
@@ -70,11 +84,20 @@ class RAGService:
             )
 
         if not results:
-            content = (
-                self.fallback_policy.invalid(decision.language)
-                if decision.intent == Intent.INVALID
-                else self.fallback_policy.no_docs(decision.language)
-            )
+            if decision.intent == Intent.INVALID:
+                content = self.fallback_policy.invalid(decision.language)
+            elif not active_settings.get("strict_grounding", True):
+                content = self.generate_with_fallback(
+                    build_general_prompt(
+                        decision.language,
+                        query.messages,
+                        system_prompt=system_prompt,
+                        settings=active_settings,
+                    ),
+                    self.fallback_policy.no_docs(decision.language),
+                )
+            else:
+                content = self.fallback_policy.no_docs(decision.language)
             return ChatOutcome(
                 content=content,
                 intent=decision.intent,
@@ -88,7 +111,13 @@ class RAGService:
             results,
         )
         content = self.generate_with_fallback(
-            build_rag_prompt(decision.language, query.messages, results),
+            build_rag_prompt(
+                decision.language,
+                query.messages,
+                results,
+                system_prompt=system_prompt,
+                settings=active_settings,
+            ),
             fallback_text,
         )
         sources = [

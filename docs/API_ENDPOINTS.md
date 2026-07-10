@@ -42,6 +42,10 @@ identities. `X-User` and arbitrary user IDs are not accepted.
 | `POST` | `/api/v1/documents/{id}/index` | Knowledge Admin |
 | `POST` | `/api/v1/feedback` | Employee |
 | `GET` | `/api/v1/admin/feedback` | Knowledge Admin |
+| `GET` | `/api/v1/admin/unanswered` | Knowledge Admin |
+| `POST` | `/api/v1/admin/quality/{id}` | Knowledge Admin |
+| `GET/PUT` | `/api/v1/admin/ai-settings` | Knowledge Admin |
+| `POST` | `/api/v1/admin/ai-settings/test` | Knowledge Admin |
 | `GET` | `/api/v1/admin/metrics` | Knowledge Admin |
 | `GET/PUT` | `/api/v1/admin/system-prompt` | Knowledge Admin |
 | `GET` | `/api/v1/admin/logs` | Knowledge Admin |
@@ -52,6 +56,17 @@ Deletion rebuilds the RAG index and is rolled back if the index cannot be refres
 Assistant feedback stores the rated question and answer. The admin feedback route
 returns those conversation fields, rating, optional note, and timestamp without a
 user identifier.
+
+The unanswered route returns only supported workplace questions that received no
+reliable document-backed answer. Invalid and out-of-scope prompts are excluded.
+Quality items can be marked `resolved` or `ignored`, which removes them from the
+active queue and its dashboard count.
+
+AI settings expose six boolean controls: strict grounding, concise answers,
+clarifying questions, suggested next steps, source visibility, and automatic
+indexing after upload. The test endpoint accepts an unsaved settings payload and
+system prompt, runs a real answer preview, and deliberately disables workflow
+creation and chat logging.
 
 ## Request Example
 

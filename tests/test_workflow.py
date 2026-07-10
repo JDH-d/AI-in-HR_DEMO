@@ -164,9 +164,21 @@ class WorkflowServiceTests(unittest.TestCase):
                 "request_events",
                 "request_comments",
                 "feedback",
+                "quality_reviews",
             }.issubset(tables)
         )
         self.assertIn("answer", feedback_columns)
+
+    def test_quality_review_actions_are_persisted_and_replaceable(self) -> None:
+        first = self.service.review_quality_item("gap-123", "ignored")
+        second = self.service.review_quality_item("gap-123", "resolved")
+
+        self.assertEqual(first["action"], "ignored")
+        self.assertEqual(second["action"], "resolved")
+        self.assertEqual(self.service.reviewed_quality_item_ids(), {"gap-123"})
+
+        with self.assertRaises(WorkflowValidationError):
+            self.service.review_quality_item("gap-456", "archive")
 
     def test_stage_one_database_is_migrated_without_losing_request(self) -> None:
         legacy_path = self.temp_dir / "legacy.db"

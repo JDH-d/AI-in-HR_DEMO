@@ -19,7 +19,8 @@ The demo is built around HR and IT policies because they are easy to understand 
 - Confirmation drawer before a request is sent for review
 - Manager inbox with filters, counters, approval/decline actions, comments, and status timeline
 - Knowledge Admin source library with document upload, download, deletion, indexing, and health metrics
-- Anonymized response feedback review with the original employee question and AI answer
+- Unified Quality queue for anonymized feedback and genuine document knowledge gaps
+- Six focused AI controls, editable system prompt, and a side-effect-free test request preview
 - Versioned `/api/v1` contract for a React frontend
 - Demo authentication with predefined Employee, Manager, and Knowledge Admin roles
 - Local-first setup with FastAPI, React, TypeScript, Vite, Tailwind CSS, SQLite, and OpenAI models
@@ -44,7 +45,7 @@ For a business reviewer, the value proposition is simple: reduce repetitive inte
 |---------|-------|---------|
 | Employee Workspace | `/employee` | Ask policy questions, review sources, create confirmed workflow requests, send feedback. |
 | Manager Inbox | `/manager` | Review incoming requests, approve/decline, leave comments, inspect timeline history. |
-| Knowledge Admin | `/knowledge` | Maintain source documents, review anonymized answer feedback, monitor knowledge gaps, metrics, and settings. |
+| Knowledge Admin | `/knowledge` | Maintain source documents, work the unified Quality queue, monitor metrics, and safely test AI settings before applying them. |
 | API Docs | `/docs` | Inspect and test the FastAPI contract. |
 
 ## Demo Accounts
@@ -186,6 +187,7 @@ The app reads configuration from environment variables via `.env`.
 | `LOG_PATH` | No | `data/chat_logs.jsonl` | Chat log path. |
 | `WORKFLOW_DB` | No | `data/workflow.db` | SQLite workflow database path. |
 | `SYSTEM_PROMPT_PATH` | No | `data/system_prompt.txt` | Runtime-editable system prompt path. |
+| `AI_SETTINGS_PATH` | No | `data/ai_settings.json` | Runtime storage for the six Knowledge Admin AI controls. |
 | `LOG_USER_TEXT_MODE` | No | `masked` | Use `masked`, `raw`, or `off`. |
 | `VITE_API_URL` | No | Same origin | API URL used by the React frontend in development/builds. |
 | `API_BASE_URL` | No | `http://127.0.0.1:8000` | API URL used by the legacy Streamlit reference UI. |
@@ -200,7 +202,7 @@ The app reads configuration from environment variables via `.env`.
 - Action-oriented messages prepare workflow drafts, but a request is created only after explicit confirmation.
 - Workflow transitions are protected: invalid status changes are rejected, and every meaningful change is written to `request_events`.
 - Managers can approve, decline with a required comment, add comments, and inspect the full timeline.
-- Knowledge Admins can upload, download, delete, and index documents; review anonymized rated conversations; and inspect knowledge gaps, settings, and metrics.
+- Knowledge Admins can upload, download, delete, and index documents; investigate anonymized rated conversations and genuine knowledge gaps in one Quality queue; and preview unsaved AI settings without creating requests or analytics noise.
 
 ## Architecture
 
@@ -244,6 +246,11 @@ Core routes:
 - `POST /api/v1/documents/{id}/index`
 - `POST /api/v1/feedback`
 - `GET /api/v1/admin/feedback`
+- `GET /api/v1/admin/unanswered`
+- `POST /api/v1/admin/quality/{id}`
+- `GET /api/v1/admin/ai-settings`
+- `PUT /api/v1/admin/ai-settings`
+- `POST /api/v1/admin/ai-settings/test`
 - `GET /api/v1/admin/metrics`
 
 Full API notes are available in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).
@@ -290,6 +297,7 @@ Ignored:
 - `data/index.json`;
 - `data/index_status.json`;
 - `data/system_prompt.txt`;
+- `data/ai_settings.json`;
 - frontend build artifacts and `frontend/node_modules/`.
 
 This means a fresh clone starts with a clean workflow database. New demo requests, manager comments, chat logs, feedback, and local indexes are generated on the developer's machine and should not be committed.

@@ -40,6 +40,7 @@ document-based RAG, and SQLite workflow storage.
 - `services/chat_service.py` is the orchestration layer for chat outcomes.
 - `services/chat_router.py` decides whether a message is a supported work question, small talk, invalid input, or a workflow-creation path.
 - `services/rag_service.py` handles retrieval-backed answers and graceful fallbacks.
+- `services/ai_settings_service.py` persists the six administrator-facing AI controls with safe defaults.
 - `services/document_service.py` and `services/document_reader.py` handle document storage, ingestion, duplicate detection, and source metadata.
 - `workflow.py` implements structured action interpretation, calendar validation,
   an explicit workflow state machine, SQLite persistence, and audit events.
@@ -59,15 +60,17 @@ document-based RAG, and SQLite workflow storage.
 8. Manager actions follow protected transitions and every change creates a
    `request_events` audit entry.
 9. If the message needs retrieval, `RAGService` verifies the versioned index, performs hybrid lexical/vector retrieval, deduplicates sections, and builds the answer.
-10. The final outcome is converted back to API DTOs and logged through `ChatLogService`.
+10. The final outcome is converted back to API DTOs and logged through `ChatLogService`; invalid out-of-scope prompts are not retained.
 11. Employee answer feedback stores the rated question and exact assistant answer;
     the Knowledge Admin API exposes an anonymized review projection without `user_id`.
+12. The Quality queue combines rated conversations with real ungrounded workplace
+    questions. Resolved and ignored gaps are persisted in `quality_reviews`.
 
 ## Workflow Storage
 
 SQLite contains `users`, `workflow_requests`, `request_events`,
-`request_comments`, `feedback`, and `assistant_feedback`. Existing databases are
-migrated automatically when opened.
+`request_comments`, `feedback`, `assistant_feedback`, and `quality_reviews`.
+Existing databases are migrated automatically when opened.
 
 Knowledge documents remain filesystem-backed. Upload and deletion operations are
 restricted to Knowledge Admins, and each deletion rebuilds the RAG index before it
@@ -83,3 +86,7 @@ server state, Zod for boundary validation, Radix primitives for accessible
 dialogs, Tailwind design tokens, and an NDJSON reader for progressive chat
 rendering. `run_demo.ps1` starts one Vite frontend; role navigation happens
 inside the SPA.
+
+The AI settings preview uses the same chat and RAG path as the Employee UI, but
+passes the unsaved prompt and switches as request-scoped overrides. Workflow
+draft creation and chat logging are disabled for preview requests.

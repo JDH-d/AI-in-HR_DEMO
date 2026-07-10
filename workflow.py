@@ -376,6 +376,12 @@ class WorkflowStore:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS quality_reviews (
+                    item_id TEXT PRIMARY KEY,
+                    action TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_requests_applicant
                     ON workflow_requests(applicant, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_events_request
@@ -430,7 +436,7 @@ class WorkflowStore:
                 conn.execute(
                     "ALTER TABLE assistant_feedback ADD COLUMN answer TEXT NOT NULL DEFAULT ''"
                 )
-            conn.execute("PRAGMA user_version = 5")
+            conn.execute("PRAGMA user_version = 6")
             conn.commit()
 
     @staticmethod
@@ -912,6 +918,31 @@ class WorkflowStore:
             for row in rows
         ]
 
+    def review_quality_item(self, item_id: str, action: str) -> dict:
+        cleaned_id = item_id.strip()
+        cleaned_action = action.strip().lower()
+        if not cleaned_id or cleaned_action not in {"resolved", "ignored"}:
+            raise WorkflowValidationError(["Unsupported quality review action."])
+        updated_at = _utc_now()
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT INTO quality_reviews (item_id, action, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(item_id) DO UPDATE SET
+                    action = excluded.action,
+                    updated_at = excluded.updated_at
+                """,
+                (cleaned_id, cleaned_action, updated_at),
+            )
+            conn.commit()
+        return {"item_id": cleaned_id, "action": cleaned_action, "updated_at": updated_at}
+
+    def reviewed_quality_item_ids(self) -> set[str]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT item_id FROM quality_reviews").fetchall()
+        return {str(row["item_id"]) for row in rows}
+
     @staticmethod
     def _require_request(conn: sqlite3.Connection, request_id: str) -> sqlite3.Row:
         row = conn.execute("SELECT * FROM workflow_requests WHERE id = ?", (request_id,)).fetchone()
@@ -1045,6 +1076,12 @@ class WorkflowService:
 
     def list_assistant_feedback(self, sentiment: str = "all", limit: int = 200) -> list[dict]:
         return self.store.list_assistant_feedback(sentiment=sentiment, limit=limit)
+
+    def review_quality_item(self, item_id: str, action: str) -> dict:
+        return self.store.review_quality_item(item_id, action)
+
+    def reviewed_quality_item_ids(self) -> set[str]:
+        return self.store.reviewed_quality_item_ids()
 
 
 def _optional_string(value: object) -> str | None:
