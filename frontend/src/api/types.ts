@@ -25,3 +25,13 @@ export type AISettingsResponse = { settings: AISettings; system_prompt: string; 
 export type AISettingsTestResult = { answer: string; intent: string; sources: Source[]; latency_ms: number };
 export type Metrics = { questions: number; grounded_answer_rate: number; unanswered_questions: number; positive_feedback_rate: number; requests_created: number; requests_approved: number; [key: string]: unknown };
 export type ChatMessage = { id: string; role: "user" | "assistant"; content: string; sources?: Source[]; workflow?: WorkflowRequest | null; streaming?: boolean; question?: string };
+export type ConversationSummary = {
+  id: string; title: string; created_at: string; updated_at: string;
+};
+export type ConversationMessage = {
+  id: string; role: "user" | "assistant"; content: string; sources: Source[];
+  workflow_request?: WorkflowRequest | null; created_at: string;
+};
+export type ConversationDetail = {
+  conversation: ConversationSummary; messages: ConversationMessage[];
+};

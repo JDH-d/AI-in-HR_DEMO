@@ -27,6 +27,9 @@ class APIV1ContractTests(unittest.TestCase):
         expected = {
             ("POST", "/api/v1/chat"),
             ("POST", "/api/v1/chat/stream"),
+            ("POST", "/api/v1/conversations"),
+            ("GET", "/api/v1/conversations"),
+            ("GET", "/api/v1/conversations/{conversation_id}"),
             ("GET", "/api/v1/me"),
             ("GET", "/api/v1/requests"),
             ("POST", "/api/v1/requests"),

@@ -26,10 +26,15 @@ from api.v1_schemas import (
 from rag.index import rebuild_index
 from rag.prompts import DEFAULT_SYSTEM_PROMPT, load_system_prompt, save_system_prompt
 from services.auth_service import AuthenticationError, DemoIdentity
+from services.conversation_service import (
+    ConversationNotFoundError,
+    ConversationValidationError,
+)
 from services.runtime import (
     ai_settings_service,
     auth_service,
     chat_service,
+    conversation_service,
     document_service,
     log_service,
     workflow_service,
@@ -69,12 +74,37 @@ def me(identity: DemoIdentity = Depends(current_identity)) -> dict:
     return {"user": identity.public_dict()}
 
 
+@router.post("/conversations", status_code=status.HTTP_201_CREATED)
+def create_conversation(
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> dict:
+    return {"conversation": conversation_service.create(identity.id)}
+
+
+@router.get("/conversations")
+def list_conversations(
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> dict:
+    return {"conversations": conversation_service.list_for_user(identity.id)}
+
+
+@router.get("/conversations/{conversation_id}")
+def get_conversation(
+    conversation_id: str,
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> dict:
+    try:
+        return conversation_service.get_for_user(conversation_id, identity.id)
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(
     payload: V1ChatRequest,
     identity: DemoIdentity = Depends(current_identity),
 ) -> ChatResponse:
-    return chat_service.handle_chat(payload, created_by=identity.id)
+    return _handle_chat(payload, identity)
 
 
 @router.post("/chat/stream")
@@ -82,7 +112,7 @@ def stream_chat(
     payload: V1ChatRequest,
     identity: DemoIdentity = Depends(current_identity),
 ) -> StreamingResponse:
-    response = chat_service.handle_chat(payload, created_by=identity.id)
+    response = _handle_chat(payload, identity)
     return StreamingResponse(
         _stream_chat_response(response),
         media_type="application/x-ndjson",
@@ -474,6 +504,48 @@ def _request_for_identity(request_id: str, identity: DemoIdentity) -> dict:
     if request is None:
         raise HTTPException(status_code=404, detail="The workflow request could not be found.")
     return request
+
+
+def _handle_chat(payload: V1ChatRequest, identity: DemoIdentity) -> ChatResponse:
+    if payload.conversation_id:
+        if identity.role != "employee":
+            raise HTTPException(
+                status_code=403,
+                detail="Only employees can save conversation history.",
+            )
+        try:
+            conversation_service.get_for_user(payload.conversation_id, identity.id)
+        except ConversationNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    response = chat_service.handle_chat(payload, created_by=identity.id)
+    if not payload.conversation_id:
+        return response
+
+    latest_user_message = next(
+        (message for message in reversed(payload.messages) if message.role == "user"),
+        None,
+    )
+    if latest_user_message is None:
+        return response
+    try:
+        conversation_service.append_exchange(
+            payload.conversation_id,
+            identity.id,
+            user_text=latest_user_message.content,
+            assistant_text=response.message.content,
+            sources=[source.model_dump() for source in response.sources or []],
+            workflow_request=(
+                response.workflow_request.model_dump()
+                if response.workflow_request is not None
+                else None
+            ),
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConversationValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return response
 
 
 def _manager_decision(

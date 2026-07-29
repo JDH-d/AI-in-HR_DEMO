@@ -1,8 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, ChevronDown, FileCheck2, MessageCircleQuestion, Plus, Search, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { api, streamChat } from "../../api/client";
-import type { ChatMessage, RequestDetail, Source, WorkflowRequest } from "../../api/types";
+import type {
+  ChatMessage,
+  ConversationDetail,
+  ConversationSummary,
+  RequestDetail,
+  Source,
+  WorkflowRequest,
+} from "../../api/types";
 import { useAuth } from "../../app/providers";
 import { Shell } from "../../components/Shell";
 import { Badge, Button, Card, Drawer, formatStatus, statusTone } from "../../components/ui";
@@ -24,9 +31,13 @@ const hello: ChatMessage = {
 
 export function EmployeePage() {
   const { token } = useAuth();
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>([hello]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [openingConversationId, setOpeningConversationId] = useState<string | null>(null);
+  const [conversationError, setConversationError] = useState("");
   const [drawer, setDrawer] = useState(false);
   const [requestDraft, setRequestDraft] = useState<WorkflowRequest | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
@@ -35,7 +46,20 @@ export function EmployeePage() {
     queryKey: ["requests"],
     queryFn: () => api<{ requests: WorkflowRequest[] }>("/api/v1/requests", token),
   });
+  const conversations = useQuery({
+    queryKey: ["conversations"],
+    queryFn: () => api<{ conversations: ConversationSummary[] }>("/api/v1/conversations", token),
+  });
+  const activeConversation = conversations.data?.conversations.find(
+    conversation => conversation.id === activeConversationId,
+  );
 
+  const startNewConversation = () => {
+    setMessages([hello]);
+    setDraft("");
+    setActiveConversationId(null);
+    setConversationError("");
+  };
   const openNewRequest = () => {
     setRequestDraft(null);
     setDrawer(true);
@@ -48,6 +72,43 @@ export function EmployeePage() {
     }
     setSelectedRequest(request.id);
   };
+  const openSavedConversation = async (conversationId: string) => {
+    if (openingConversationId) return;
+    setConversationError("");
+    setOpeningConversationId(conversationId);
+    try {
+      const detail = await api<ConversationDetail>(
+        `/api/v1/conversations/${conversationId}`,
+        token,
+      );
+      let previousQuestion = "";
+      const restored = detail.messages.map<ChatMessage>(message => {
+        if (message.role === "user") {
+          previousQuestion = message.content;
+          return { id: message.id, role: "user", content: message.content };
+        }
+        return {
+          id: message.id,
+          role: "assistant",
+          content: message.content,
+          sources: message.sources,
+          workflow: message.workflow_request ?? null,
+          question: previousQuestion,
+        };
+      });
+      setMessages(restored.length ? restored : [hello]);
+      setActiveConversationId(conversationId);
+      setDrawer(false);
+      setRequestDraft(null);
+      bottom.current?.scrollIntoView({ behavior: "smooth" });
+    } catch (error) {
+      setConversationError(
+        error instanceof Error ? error.message : "Unable to open this conversation.",
+      );
+    } finally {
+      setOpeningConversationId(null);
+    }
+  };
   const send = async (text = draft) => {
     const prompt = text.trim();
     if (!prompt || sending) return;
@@ -58,6 +119,16 @@ export function EmployeePage() {
     setSending(true);
     const history = [...messages.filter(message => message.id !== "hello"), userMessage].map(message => ({ role: message.role, content: message.content }));
     try {
+      let conversationId = activeConversationId;
+      if (!conversationId) {
+        const created = await api<{ conversation: ConversationSummary }>(
+          "/api/v1/conversations",
+          token,
+          { method: "POST" },
+        );
+        conversationId = created.conversation.id;
+        setActiveConversationId(conversationId);
+      }
       await streamChat(token, history, event => {
         if (event.type === "token") {
           setMessages(current => current.map(message => message.id === assistantId ? { ...message, content: message.content + String(event.content) } : message));
@@ -74,9 +145,10 @@ export function EmployeePage() {
             setRequestDraft(workflow);
             setDrawer(true);
           }
+          void queryClient.invalidateQueries({ queryKey: ["conversations"] });
         }
         bottom.current?.scrollIntoView({ behavior: "smooth" });
-      });
+      }, conversationId);
     } catch (error) {
       setMessages(current => current.map(message => message.id === assistantId ? {
         ...message,
@@ -89,13 +161,30 @@ export function EmployeePage() {
   };
 
   const sidebar = <>
-    <Button className="mb-5 w-full justify-start" onClick={openNewRequest}><Plus size={16} />New request</Button>
+    <Button className="mb-5 w-full justify-start" onClick={startNewConversation}><Plus size={16} />New conversation</Button>
     <NavLabel>Recent conversations</NavLabel>
     <div className="space-y-1">
-      {["Vacation planning", "Payroll schedule", "VPN access process"].map((label, index) => <button key={label} className="focus-ring w-full truncate rounded-xl px-3 py-2.5 text-left text-sm text-muted hover:bg-raised hover:text-cream">
-        <MessageCircleQuestion className="mr-2 inline" size={14} />{label}
-        {index === 0 && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-lime" />}
-      </button>)}
+      {conversations.data?.conversations.map(conversation => {
+        const active = conversation.id === activeConversationId;
+        return <button
+          key={conversation.id}
+          className={`focus-ring flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition ${active ? "bg-lime-soft text-cream" : "text-muted hover:bg-raised hover:text-cream"}`}
+          onClick={() => void openSavedConversation(conversation.id)}
+          disabled={Boolean(openingConversationId)}
+        >
+          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-lime" : "bg-coral"}`} />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold">{conversation.title}</span>
+            <span className="mt-1 block text-[10px] text-muted">
+              {openingConversationId === conversation.id ? "Opening..." : formatConversationTime(conversation.updated_at)}
+            </span>
+          </span>
+        </button>;
+      })}
+      {conversations.isLoading && <p className="px-3 text-xs leading-5 text-muted">Loading conversations...</p>}
+      {conversations.isError && <p className="px-3 text-xs leading-5 text-danger">Unable to load conversations.</p>}
+      {!conversations.isLoading && !conversations.data?.conversations.length && <p className="px-3 text-xs leading-5 text-muted">Your saved HR conversations will appear here.</p>}
+      {conversationError && <p className="px-3 text-xs leading-5 text-danger">{conversationError}</p>}
     </div>
     <NavLabel>My requests</NavLabel>
     <div className="space-y-2">
@@ -119,6 +208,12 @@ export function EmployeePage() {
   return <Shell sidebar={sidebar} eyebrow="Employee workspace">
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-5xl flex-col px-4 sm:px-8">
       <div className="flex-1 py-8 sm:py-12">
+        {messages.length > 1 && <section className="mb-8 border-b border-line pb-5">
+          <p className="text-[10px] font-bold uppercase tracking-[.16em] text-lime">Conversation</p>
+          <h1 className="mt-2 text-2xl font-medium tracking-[-.025em]">
+            {activeConversation?.title ?? "New conversation"}
+          </h1>
+        </section>}
         {messages.length === 1 && <section className="mb-10">
           <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-lime"><Sparkles size={15} />Suggested actions</div>
           <h1 className="max-w-2xl text-4xl font-medium tracking-[-.035em] sm:text-5xl">What can we make easier today?</h1>
@@ -191,4 +286,19 @@ function Message({ message, onOpenRequest }: { message: ChatMessage; onOpenReque
 
 function NavLabel({ children }: { children: React.ReactNode }) {
   return <div className="mb-2 mt-5 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-muted">{children}</div>;
+}
+
+function formatConversationTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDifference = Math.round(
+    (startOfToday.getTime() - startOfDate.getTime()) / 86_400_000,
+  );
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (dayDifference === 0) return `Today, ${time}`;
+  if (dayDifference === 1) return "Yesterday";
+  return date.toLocaleDateString([], { day: "2-digit", month: "short" });
 }

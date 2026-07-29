@@ -58,11 +58,12 @@ export async function streamChat(
   token: string,
   messages: { role: string; content: string }[],
   onEvent: (event: Record<string, unknown>) => void,
+  conversationId?: string | null,
 ): Promise<void> {
   const response = await fetch(`${API}/api/v1/chat/stream`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, conversation_id: conversationId ?? null }),
   });
   if (!response.ok || !response.body) throw new ApiError(response.status, "Unable to stream response");
   const reader = response.body.getReader();

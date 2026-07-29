@@ -79,4 +79,4 @@ class QualityReviewAction(BaseModel):
 
 
 class V1ChatRequest(ChatRequest):
-    pass
+    conversation_id: str | None = None
