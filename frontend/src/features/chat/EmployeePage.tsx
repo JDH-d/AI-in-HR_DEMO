@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, ChevronDown, FileCheck2, MessageCircleQuestion, Plus, Search, Sparkles } from "lucide-react";
+import { ArrowUp, ChevronDown, FileCheck2, MessageCircleQuestion, Plus, Search, Sparkles, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { api, streamChat } from "../../api/client";
 import type {
@@ -39,6 +39,9 @@ export function EmployeePage() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [openingConversationId, setOpeningConversationId] = useState<string | null>(null);
   const [conversationError, setConversationError] = useState("");
+  const [conversationToDelete, setConversationToDelete] = useState<ConversationSummary | null>(null);
+  const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
+  const [conversationDeleteError, setConversationDeleteError] = useState("");
   const [conversationHistoryOpen, setConversationHistoryOpen] = useState(true);
   const [showAllConversations, setShowAllConversations] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -120,6 +123,38 @@ export function EmployeePage() {
       setOpeningConversationId(null);
     }
   };
+  const deleteConversation = async () => {
+    if (!conversationToDelete || deletingConversationId) return;
+    const conversationId = conversationToDelete.id;
+    setConversationDeleteError("");
+    setDeletingConversationId(conversationId);
+    try {
+      await api(
+        `/api/v1/conversations/${conversationId}`,
+        token,
+        { method: "DELETE" },
+      );
+      queryClient.setQueryData<{ conversations: ConversationSummary[] }>(
+        ["conversations"],
+        current => ({
+          conversations: (current?.conversations ?? []).filter(
+            conversation => conversation.id !== conversationId,
+          ),
+        }),
+      );
+      if (activeConversationId === conversationId) startNewConversation();
+      if (conversationItems.length - 1 <= recentConversationLimit) {
+        setShowAllConversations(false);
+      }
+      setConversationToDelete(null);
+    } catch (error) {
+      setConversationDeleteError(
+        error instanceof Error ? error.message : "Unable to delete this conversation.",
+      );
+    } finally {
+      setDeletingConversationId(null);
+    }
+  };
   const send = async (text = draft) => {
     const prompt = text.trim();
     if (!prompt || sending) return;
@@ -194,20 +229,36 @@ export function EmployeePage() {
     {conversationHistoryOpen && <div id="recent-conversations-list" className="space-y-1">
       {visibleConversations.map(conversation => {
         const active = conversation.id === activeConversationId;
-        return <button
+        return <div
           key={conversation.id}
-          className={`focus-ring flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition ${active ? "bg-lime-soft text-cream" : "text-muted hover:bg-raised hover:text-cream"}`}
-          onClick={() => void openSavedConversation(conversation.id)}
-          disabled={Boolean(openingConversationId)}
+          className={`group flex w-full items-stretch rounded-xl transition ${active ? "bg-lime-soft text-cream" : "text-muted hover:bg-raised hover:text-cream"}`}
         >
-          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-lime" : "bg-coral"}`} />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold">{conversation.title}</span>
-            <span className="mt-1 block text-[10px] text-muted">
-              {openingConversationId === conversation.id ? "Opening..." : formatConversationTime(conversation.updated_at)}
+          <button
+            className="focus-ring flex min-w-0 flex-1 items-start gap-2 rounded-xl px-3 py-2.5 text-left"
+            onClick={() => void openSavedConversation(conversation.id)}
+            disabled={Boolean(openingConversationId || deletingConversationId)}
+            aria-label={`Open conversation ${conversation.title}`}
+          >
+            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-lime" : "bg-coral"}`} />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{conversation.title}</span>
+              <span className="mt-1 block text-[10px] text-muted">
+                {openingConversationId === conversation.id ? "Opening..." : formatConversationTime(conversation.updated_at)}
+              </span>
             </span>
-          </span>
-        </button>;
+          </button>
+          <button
+            className="focus-ring m-1.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-danger/10 hover:text-danger disabled:opacity-45"
+            onClick={() => {
+              setConversationDeleteError("");
+              setConversationToDelete(conversation);
+            }}
+            disabled={Boolean(deletingConversationId)}
+            aria-label={`Delete conversation ${conversation.title}`}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>;
       })}
       {conversations.isLoading && <p className="px-3 text-xs leading-5 text-muted">Loading conversations...</p>}
       {conversations.isError && <p className="px-3 text-xs leading-5 text-danger">Unable to load conversations.</p>}
@@ -276,6 +327,49 @@ export function EmployeePage() {
       </div>
     </div>
     <RequestDrawer open={drawer} onOpenChange={setDrawer} initial={requestDraft} />
+    <Drawer
+      open={Boolean(conversationToDelete)}
+      onOpenChange={open => {
+        if (!open && !deletingConversationId) {
+          setConversationDeleteError("");
+          setConversationToDelete(null);
+        }
+      }}
+      title="Delete conversation?"
+      description="This permanently removes the conversation and all of its messages."
+      placement="center"
+    >
+      <div className="space-y-5">
+        <Card className="bg-ink/60 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[.16em] text-muted">
+            Conversation
+          </p>
+          <p className="mt-2 text-sm font-semibold">
+            {conversationToDelete?.title}
+          </p>
+        </Card>
+        {conversationDeleteError && <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger">
+          {conversationDeleteError}
+        </p>}
+        <div className="flex justify-end gap-3">
+          <Button
+            tone="secondary"
+            onClick={() => setConversationToDelete(null)}
+            disabled={Boolean(deletingConversationId)}
+          >
+            Cancel
+          </Button>
+          <Button
+            tone="danger"
+            onClick={() => void deleteConversation()}
+            disabled={Boolean(deletingConversationId)}
+          >
+            <Trash2 size={15} />
+            {deletingConversationId ? "Deleting..." : "Delete conversation"}
+          </Button>
+        </div>
+      </div>
+    </Drawer>
     <EmployeeRequestDetails id={selectedRequest} onClose={() => setSelectedRequest(null)} />
   </Shell>;
 }

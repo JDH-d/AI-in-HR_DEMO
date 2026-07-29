@@ -117,6 +117,39 @@ class ConversationV1APITests(unittest.TestCase):
         self.assertEqual(create.status_code, 403)
         self.assertEqual(listed.status_code, 403)
 
+    def test_employee_can_delete_own_conversation(self) -> None:
+        conversation = self.service.create("employee.demo")
+        self.service.append_exchange(
+            conversation["id"],
+            "employee.demo",
+            user_text="Temporary question",
+            assistant_text="Temporary answer",
+        )
+
+        forbidden = self.client.delete(
+            f"/api/v1/conversations/{conversation['id']}",
+            headers=self.manager_headers,
+        )
+        deleted = self.client.delete(
+            f"/api/v1/conversations/{conversation['id']}",
+            headers=self.employee_headers,
+        )
+        reopened = self.client.get(
+            f"/api/v1/conversations/{conversation['id']}",
+            headers=self.employee_headers,
+        )
+        deleted_again = self.client.delete(
+            f"/api/v1/conversations/{conversation['id']}",
+            headers=self.employee_headers,
+        )
+
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(deleted.status_code, 200)
+        self.assertTrue(deleted.json()["deleted"])
+        self.assertEqual(deleted.json()["conversation"]["id"], conversation["id"])
+        self.assertEqual(reopened.status_code, 404)
+        self.assertEqual(deleted_again.status_code, 404)
+
     def test_unknown_conversation_is_rejected_before_chat_processing(self) -> None:
         with patch("api.v1_routes.chat_service.handle_chat") as handle_chat:
             response = self.client.post(

@@ -126,6 +126,30 @@ class ConversationService:
             "messages": [_message_row_to_dict(row) for row in messages],
         }
 
+    def delete_for_user(self, conversation_id: str, user_id: str) -> dict:
+        cleaned_conversation_id = _required_text(conversation_id, "Conversation ID")
+        cleaned_user_id = _required_text(user_id, "User ID")
+        with closing(self._connect()) as conn:
+            conversation = conn.execute(
+                """
+                SELECT *
+                FROM conversations
+                WHERE id = ? AND user_id = ?
+                """,
+                (cleaned_conversation_id, cleaned_user_id),
+            ).fetchone()
+            if conversation is None:
+                raise ConversationNotFoundError("The conversation could not be found.")
+            conn.execute(
+                """
+                DELETE FROM conversations
+                WHERE id = ? AND user_id = ?
+                """,
+                (cleaned_conversation_id, cleaned_user_id),
+            )
+            conn.commit()
+        return _conversation_row_to_dict(conversation)
+
     def append_exchange(
         self,
         conversation_id: str,

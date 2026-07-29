@@ -90,7 +90,7 @@ describe("Employee conversation history", () => {
 
     fireEvent.click(await screen.findByRole(
       "button",
-      { name: /My parental leave options/i },
+      { name: "Open conversation My parental leave options" },
       { timeout: 5_000 },
     ));
 
@@ -184,5 +184,71 @@ describe("Employee conversation history", () => {
     }));
     expect(await screen.findByText("Conversation 3")).toBeInTheDocument();
     expect(screen.queryByText("Conversation 4")).not.toBeInTheDocument();
+  });
+
+  it("confirms deletion and resets an active conversation", async () => {
+    vi.mocked(api).mockImplementation(async (path, _token, init) => {
+      if (path === "/api/v1/requests") return { requests: [] };
+      if (path === "/api/v1/conversations") {
+        return { conversations: [savedConversation] };
+      }
+      if (path === "/api/v1/conversations/conversation-1" && init?.method === "DELETE") {
+        return { deleted: true, conversation: savedConversation };
+      }
+      if (path === "/api/v1/conversations/conversation-1") {
+        return {
+          conversation: savedConversation,
+          messages: [
+            {
+              id: "message-1",
+              role: "user",
+              content: "Delete this question.",
+              sources: [],
+              created_at: "2030-04-01T09:00:00Z",
+            },
+            {
+              id: "message-2",
+              role: "assistant",
+              content: "Delete this answer.",
+              sources: [],
+              workflow_request: null,
+              created_at: "2030-04-01T09:01:00Z",
+            },
+          ],
+        } satisfies ConversationDetail;
+      }
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Open conversation My parental leave options",
+    }));
+    expect(await screen.findByText("Delete this answer.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Delete conversation My parental leave options",
+    }));
+    expect(screen.getByRole("heading", { name: "Delete conversation?" })).toBeInTheDocument();
+    expect(screen.getByText(
+      "This permanently removes the conversation and all of its messages.",
+    )).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete conversation" }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        "/api/v1/conversations/conversation-1",
+        "employee-token",
+        { method: "DELETE" },
+      );
+    });
+    expect(await screen.findByText(
+      "Good morning. I can answer policy questions with evidence, or turn a clear action into a request you review before sending.",
+    )).toBeInTheDocument();
+    expect(screen.queryByText("Delete this answer.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Delete conversation My parental leave options",
+    })).not.toBeInTheDocument();
   });
 });

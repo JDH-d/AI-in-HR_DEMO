@@ -1,4 +1,5 @@
 import shutil
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -85,6 +86,33 @@ class ConversationServiceTests(unittest.TestCase):
 
         restored = self.service.get_for_user(conversation["id"], "employee.one")
         self.assertEqual(restored["messages"], [])
+
+    def test_owner_can_delete_conversation_and_its_messages(self) -> None:
+        conversation = self.service.create("employee.one")
+        self.service.append_exchange(
+            conversation["id"],
+            "employee.one",
+            user_text="Delete this conversation.",
+            assistant_text="This answer will be deleted with it.",
+        )
+
+        with self.assertRaises(ConversationNotFoundError):
+            self.service.delete_for_user(conversation["id"], "employee.two")
+        deleted = self.service.delete_for_user(conversation["id"], "employee.one")
+
+        self.assertEqual(deleted["id"], conversation["id"])
+        with self.assertRaises(ConversationNotFoundError):
+            self.service.get_for_user(conversation["id"], "employee.one")
+        with sqlite3.connect(self.db_path) as conn:
+            message_count = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM conversation_messages
+                WHERE conversation_id = ?
+                """,
+                (conversation["id"],),
+            ).fetchone()[0]
+        self.assertEqual(message_count, 0)
 
 
 if __name__ == "__main__":

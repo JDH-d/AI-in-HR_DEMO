@@ -99,6 +99,18 @@ def get_conversation(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.delete("/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: str,
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> dict:
+    try:
+        deleted = conversation_service.delete_for_user(conversation_id, identity.id)
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"deleted": True, "conversation": deleted}
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(
     payload: V1ChatRequest,
