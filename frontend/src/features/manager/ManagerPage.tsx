@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock3, Filter, Inbox, Search, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { api } from "../../api/client";
 import type { RequestDetail, WorkflowRequest } from "../../api/types";
 import { useAuth } from "../../app/providers";
@@ -13,7 +14,14 @@ export function ManagerPage() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selected = searchParams.get("request");
+  const setSelected = (requestId: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (requestId) next.set("request", requestId);
+    else next.delete("request");
+    setSearchParams(next, { replace: true });
+  };
   const requests = useQuery({
     queryKey: ["manager-requests"],
     queryFn: () => api<{ requests: WorkflowRequest[] }>("/api/v1/requests", token),

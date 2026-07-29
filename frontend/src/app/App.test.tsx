@@ -6,6 +6,7 @@ import type { RequestDetail } from "../api/types";
 import { decisionComment } from "../features/requests/RequestDetails";
 import { App } from "./App";
 import { AppProviders } from "./providers";
+import { destinationForRole } from "../pages/LoginPage";
 
 describe("PeopleFlow application shell", () => {
   beforeEach(() => sessionStorage.clear());
@@ -57,5 +58,15 @@ describe("PeopleFlow application shell", () => {
     } satisfies RequestDetail;
 
     expect(decisionComment(detail)).toBe("Coverage is unavailable.");
+  });
+
+  it("preserves safe manager request links after login", () => {
+    expect(destinationForRole("manager", "/manager?request=request-1")).toBe(
+      "/manager?request=request-1",
+    );
+    expect(destinationForRole("employee", "/manager?request=request-1")).toBe(
+      "/employee",
+    );
+    expect(destinationForRole("manager", "https://example.com")).toBe("/manager");
   });
 });

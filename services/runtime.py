@@ -10,6 +10,7 @@ from .conversation_service import ConversationService
 from .document_service import DocumentService
 from .llm_service import LLMService
 from .log_service import ChatLogService
+from .slack_notification_service import SlackNotificationService
 
 workflow_service = WorkflowService(str(settings.WORKFLOW_DB))
 conversation_service = ConversationService(str(settings.WORKFLOW_DB))
@@ -25,6 +26,12 @@ llm_service = LLMService(
 log_service = ChatLogService(
     settings.LOG_PATH,
     user_text_mode=settings.LOG_USER_TEXT_MODE,
+)
+slack_notification_service = SlackNotificationService(
+    enabled=settings.SLACK_NOTIFICATIONS_ENABLED,
+    webhook_url=settings.SLACK_WEBHOOK_URL,
+    public_web_base_url=settings.PUBLIC_WEB_BASE_URL,
+    timeout_seconds=settings.SLACK_TIMEOUT_SECONDS,
 )
 document_service = DocumentService(
     settings.DOCUMENTS_DIR,

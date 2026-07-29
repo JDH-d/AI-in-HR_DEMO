@@ -33,6 +33,13 @@ def _get_int(name: str, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
+def _get_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano-2025-08-07").strip()
 OPENAI_TIMEOUT_SECONDS = _get_float("OPENAI_TIMEOUT_SECONDS", 30.0, 1.0, 300.0)
 OPENAI_MAX_RETRIES = _get_int("OPENAI_MAX_RETRIES", 2, 0, 5)
@@ -61,5 +68,17 @@ SYSTEM_PROMPT_PATH = _resolve_path(os.getenv("SYSTEM_PROMPT_PATH", "data/system_
 AI_SETTINGS_PATH = _resolve_path(os.getenv("AI_SETTINGS_PATH", "data/ai_settings.json"))
 
 LOG_USER_TEXT_MODE = (os.getenv("LOG_USER_TEXT_MODE", "masked") or "masked").strip().lower()
+
+SLACK_NOTIFICATIONS_ENABLED = _get_bool("SLACK_NOTIFICATIONS_ENABLED", False)
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+SLACK_TIMEOUT_SECONDS = _get_float("SLACK_TIMEOUT_SECONDS", 3.0, 0.5, 10.0)
+PUBLIC_WEB_BASE_URL = (
+    os.getenv(
+        "PUBLIC_WEB_BASE_URL",
+        "http://127.0.0.1:5173",
+    )
+    .strip()
+    .rstrip("/")
+)
 
 SUPPORTED_DOC_EXTENSIONS = {".txt", ".md", ".pdf", ".docx"}

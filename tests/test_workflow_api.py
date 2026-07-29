@@ -1,7 +1,7 @@
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -19,11 +19,19 @@ class WorkflowV1APITests(unittest.TestCase):
         self.client = TestClient(app)
         self.workflow_patch = patch("api.v1_routes.workflow_service", self.service)
         self.workflow_patch.start()
+        self.slack_notifier = Mock()
+        self.slack_notifier.notify_request.return_value = True
+        self.slack_patch = patch(
+            "api.v1_routes.slack_notification_service",
+            self.slack_notifier,
+        )
+        self.slack_patch.start()
         self.employee_headers = self._headers("employee")
         self.manager_headers = self._headers("manager")
         self.admin_headers = self._headers("knowledge_admin")
 
     def tearDown(self) -> None:
+        self.slack_patch.stop()
         self.workflow_patch.stop()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
@@ -42,6 +50,7 @@ class WorkflowV1APITests(unittest.TestCase):
         draft = created.json()["request"]
         self.assertEqual(draft["status"], "draft")
         self.assertEqual(draft["applicant"], "employee.demo")
+        self.slack_notifier.notify_request.assert_not_called()
 
         sent_for_review = self.client.post(
             f"/api/v1/requests/{draft['id']}/submit",
@@ -60,6 +69,10 @@ class WorkflowV1APITests(unittest.TestCase):
 
         self.assertEqual(sent_for_review.status_code, 200)
         self.assertEqual(sent_for_review.json()["request"]["status"], "in_review")
+        self.slack_notifier.notify_request.assert_called_once_with(
+            sent_for_review.json()["request"],
+            "Demo Employee",
+        )
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(
             [event["to_status"] for event in detail.json()["events"]],
@@ -69,6 +82,7 @@ class WorkflowV1APITests(unittest.TestCase):
 
     def test_manager_can_approve_request_in_review(self) -> None:
         request = self._review_request()
+        self.slack_notifier.reset_mock()
 
         approved = self.client.post(
             f"/api/v1/requests/{request['id']}/approve",
@@ -82,6 +96,10 @@ class WorkflowV1APITests(unittest.TestCase):
 
         self.assertEqual(approved.status_code, 200)
         self.assertEqual(approved.json()["request"]["status"], "approved")
+        self.slack_notifier.notify_request.assert_called_once_with(
+            approved.json()["request"],
+            "Demo Employee",
+        )
         self.assertEqual(
             [event["to_status"] for event in detail.json()["events"]],
             ["draft", "in_review", "approved"],
@@ -89,6 +107,7 @@ class WorkflowV1APITests(unittest.TestCase):
 
     def test_manager_can_decline_and_employee_cannot_decide(self) -> None:
         request = self._review_request()
+        self.slack_notifier.reset_mock()
 
         forbidden = self.client.post(
             f"/api/v1/requests/{request['id']}/approve",
@@ -104,6 +123,10 @@ class WorkflowV1APITests(unittest.TestCase):
         self.assertEqual(forbidden.status_code, 403)
         self.assertEqual(declined.status_code, 200)
         self.assertEqual(declined.json()["request"]["status"], "declined")
+        self.slack_notifier.notify_request.assert_called_once_with(
+            declined.json()["request"],
+            "Demo Employee",
+        )
         manager_detail = self.client.get(
             f"/api/v1/requests/{request['id']}",
             headers=self.manager_headers,
@@ -129,6 +152,35 @@ class WorkflowV1APITests(unittest.TestCase):
             json={"comment": ""},
         )
         self.assertEqual(response.status_code, 422)
+
+    def test_slack_failure_does_not_lose_submitted_request(self) -> None:
+        created = self.client.post(
+            "/api/v1/requests",
+            headers=self.employee_headers,
+            json={
+                "type": "pto",
+                "start_date": "2030-05-01",
+                "end_date": "2030-05-02",
+                "comment": "Family event",
+            },
+        )
+        request_id = created.json()["request"]["id"]
+        self.slack_notifier.notify_request.side_effect = RuntimeError("Slack unavailable")
+
+        submitted = self.client.post(
+            f"/api/v1/requests/{request_id}/submit",
+            headers=self.employee_headers,
+            json={},
+        )
+        persisted = self.client.get(
+            f"/api/v1/requests/{request_id}",
+            headers=self.employee_headers,
+        )
+
+        self.assertEqual(submitted.status_code, 200)
+        self.assertEqual(submitted.json()["request"]["status"], "in_review")
+        self.assertEqual(persisted.status_code, 200)
+        self.assertEqual(persisted.json()["request"]["status"], "in_review")
 
     def test_knowledge_admin_cannot_create_or_approve_request(self) -> None:
         create = self.client.post(

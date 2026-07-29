@@ -25,7 +25,7 @@ from api.v1_schemas import (
 )
 from rag.index import rebuild_index
 from rag.prompts import DEFAULT_SYSTEM_PROMPT, load_system_prompt, save_system_prompt
-from services.auth_service import AuthenticationError, DemoIdentity
+from services.auth_service import DEMO_IDENTITIES, AuthenticationError, DemoIdentity
 from services.conversation_service import (
     ConversationNotFoundError,
     ConversationValidationError,
@@ -37,6 +37,7 @@ from services.runtime import (
     conversation_service,
     document_service,
     log_service,
+    slack_notification_service,
     workflow_service,
 )
 from workflow import (
@@ -194,6 +195,7 @@ def submit_request(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    _notify_slack(request, identity.display_name)
     return {"request": request}
 
 
@@ -578,16 +580,36 @@ def _manager_decision(
             detail=f"Request in status {request['status']} cannot be {target}.",
         )
     try:
-        return workflow_service.transition(
+        result = workflow_service.transition(
             request_id,
             target,
             actor=identity.id,
             comment=comment,
         )
+        _notify_slack(result, _display_name_for(result["applicant"]))
+        return result
     except WorkflowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _notify_slack(request: dict, employee_name: str) -> None:
+    try:
+        slack_notification_service.notify_request(request, employee_name)
+    except Exception:
+        logger.exception(
+            "Unexpected Slack notification failure for request %s.",
+            str(request.get("id") or "unknown")[:8],
+        )
+
+
+def _display_name_for(identity_id: str) -> str:
+    identity = next(
+        (item for item in DEMO_IDENTITIES.values() if item.id == identity_id),
+        None,
+    )
+    return identity.display_name if identity else identity_id
 
 
 def _stream_chat_response(response: ChatResponse) -> Iterator[str]:

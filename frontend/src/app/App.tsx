@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useLocation } from "react-router";
 import { useAuth } from "./providers";
 import { LoginPage } from "../pages/LoginPage";
 import { EmployeePage } from "../features/chat/EmployeePage";
@@ -19,5 +19,10 @@ export function App() {
 }
 function Guard({ role, children }: { role: string; children: React.ReactNode }) {
   const { user } = useAuth();
-  return user?.role === role ? children : <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!user) {
+    const next = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+  return user.role === role ? children : <Navigate to="/" replace />;
 }
