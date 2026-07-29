@@ -147,4 +147,42 @@ describe("Employee conversation history", () => {
     });
     expect(await screen.findByText("Saved answer.")).toBeInTheDocument();
   });
+
+  it("keeps requests close by while recent conversations expand and collapse", async () => {
+    const conversationList = [
+      savedConversation,
+      ...Array.from({ length: 4 }, (_, index) => ({
+        ...savedConversation,
+        id: `conversation-${index + 2}`,
+        title: `Conversation ${index + 2}`,
+      })),
+    ];
+    vi.mocked(api).mockImplementation(async path => {
+      if (path === "/api/v1/requests") return { requests: [] };
+      if (path === "/api/v1/conversations") {
+        return { conversations: conversationList };
+      }
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+    renderPage();
+
+    expect(await screen.findByText("Conversation 3")).toBeInTheDocument();
+    expect(screen.queryByText("Conversation 4")).not.toBeInTheDocument();
+    expect(screen.getByText("My requests")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all (5)" }));
+    expect(await screen.findByText("Conversation 5")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Collapse recent conversations",
+    }));
+    expect(screen.queryByText("My parental leave options")).not.toBeInTheDocument();
+    expect(screen.getByText("My requests")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Expand recent conversations",
+    }));
+    expect(await screen.findByText("Conversation 3")).toBeInTheDocument();
+    expect(screen.queryByText("Conversation 4")).not.toBeInTheDocument();
+  });
 });

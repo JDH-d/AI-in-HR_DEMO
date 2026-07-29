@@ -23,6 +23,7 @@ const suggestions = [
   ["VPN access", "How do I request VPN access?"],
   ["New hire setup", "What should be ready for a new hire on day one?"],
 ];
+const recentConversationLimit = 3;
 const hello: ChatMessage = {
   id: "hello",
   role: "assistant",
@@ -38,6 +39,8 @@ export function EmployeePage() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [openingConversationId, setOpeningConversationId] = useState<string | null>(null);
   const [conversationError, setConversationError] = useState("");
+  const [conversationHistoryOpen, setConversationHistoryOpen] = useState(true);
+  const [showAllConversations, setShowAllConversations] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [requestDraft, setRequestDraft] = useState<WorkflowRequest | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
@@ -53,12 +56,20 @@ export function EmployeePage() {
   const activeConversation = conversations.data?.conversations.find(
     conversation => conversation.id === activeConversationId,
   );
+  const conversationItems = conversations.data?.conversations ?? [];
+  const visibleConversations = showAllConversations
+    ? conversationItems
+    : conversationItems.slice(0, recentConversationLimit);
 
   const startNewConversation = () => {
     setMessages([hello]);
     setDraft("");
     setActiveConversationId(null);
     setConversationError("");
+  };
+  const toggleConversationHistory = () => {
+    if (conversationHistoryOpen) setShowAllConversations(false);
+    setConversationHistoryOpen(current => !current);
   };
   const openNewRequest = () => {
     setRequestDraft(null);
@@ -162,9 +173,26 @@ export function EmployeePage() {
 
   const sidebar = <>
     <Button className="mb-5 w-full justify-start" onClick={startNewConversation}><Plus size={16} />New conversation</Button>
-    <NavLabel>Recent conversations</NavLabel>
-    <div className="space-y-1">
-      {conversations.data?.conversations.map(conversation => {
+    <button
+      className="focus-ring mb-2 mt-5 flex w-full items-center justify-between rounded-md px-3 text-left text-muted transition hover:text-cream"
+      onClick={toggleConversationHistory}
+      aria-expanded={conversationHistoryOpen}
+      aria-controls="recent-conversations-list"
+      aria-label={`${conversationHistoryOpen ? "Collapse" : "Expand"} recent conversations`}
+    >
+      <span className="text-[10px] font-bold uppercase tracking-[.16em]">
+        Recent conversations
+      </span>
+      <span className="flex items-center gap-1.5 text-[10px] font-bold">
+        {conversations.data && <span>{conversationItems.length}</span>}
+        <ChevronDown
+          className={`transition-transform ${conversationHistoryOpen ? "rotate-180" : ""}`}
+          size={12}
+        />
+      </span>
+    </button>
+    {conversationHistoryOpen && <div id="recent-conversations-list" className="space-y-1">
+      {visibleConversations.map(conversation => {
         const active = conversation.id === activeConversationId;
         return <button
           key={conversation.id}
@@ -185,7 +213,14 @@ export function EmployeePage() {
       {conversations.isError && <p className="px-3 text-xs leading-5 text-danger">Unable to load conversations.</p>}
       {!conversations.isLoading && !conversations.data?.conversations.length && <p className="px-3 text-xs leading-5 text-muted">Your saved HR conversations will appear here.</p>}
       {conversationError && <p className="px-3 text-xs leading-5 text-danger">{conversationError}</p>}
-    </div>
+      {conversationItems.length > recentConversationLimit && <button
+        className="focus-ring w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-lime transition hover:bg-raised"
+        onClick={() => setShowAllConversations(current => !current)}
+        aria-expanded={showAllConversations}
+      >
+        {showAllConversations ? "Show recent" : `Show all (${conversationItems.length})`}
+      </button>}
+    </div>}
     <NavLabel>My requests</NavLabel>
     <div className="space-y-2">
       {requests.data?.requests.slice(0, 4).map(request => <button
