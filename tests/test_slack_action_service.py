@@ -2,6 +2,7 @@ import shutil
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import call, patch
 
 import requests
 
@@ -124,10 +125,27 @@ class SlackActionServiceTests(unittest.TestCase):
         self.assertEqual(self._current_request()["status"], "in_review")
         self.assertEqual(client.updates, [])
         self.assertEqual(self.response_updates, [])
-        self.assertEqual(len(client.ephemeral_messages), 1)
-        self.assertIn("not authorized", client.ephemeral_messages[0]["text"])
+        self.assertEqual(
+            client.ephemeral_messages[0]["text"],
+            "You are not allowed to manage this request.",
+        )
 
-    def test_decline_button_opens_required_reason_modal(self) -> None:
+    def test_missing_request_returns_exact_message(self) -> None:
+        ack = _Ack()
+        client = _SlackClient()
+        body = self._action_body()
+        body["actions"][0]["value"] = "missing-request"
+
+        self.service.handle_approve(ack=ack, body=body, client=client)
+
+        self.assertEqual(ack.calls, [((), {})])
+        self.assertEqual(self.response_updates, [])
+        self.assertEqual(
+            client.ephemeral_messages[0]["text"],
+            "Request not found.",
+        )
+
+    def test_decline_button_opens_reason_modal_for_server_validation(self) -> None:
         ack = _Ack()
         client = _SlackClient()
 
@@ -144,7 +162,7 @@ class SlackActionServiceTests(unittest.TestCase):
         self.assertEqual(view["callback_id"], DECLINE_VIEW_CALLBACK_ID)
         reason_input = view["blocks"][0]
         self.assertEqual(reason_input["type"], "input")
-        self.assertNotIn("optional", reason_input)
+        self.assertTrue(reason_input["optional"])
 
     def test_blank_decline_reason_keeps_modal_open(self) -> None:
         client = _SlackClient()
@@ -174,6 +192,10 @@ class SlackActionServiceTests(unittest.TestCase):
         self.assertIn(
             DECLINE_REASON_BLOCK_ID,
             ack.calls[0][1]["errors"],
+        )
+        self.assertEqual(
+            ack.calls[0][1]["errors"][DECLINE_REASON_BLOCK_ID],
+            "Please enter a reason for declining this request.",
         )
 
     def test_decline_reason_is_saved_in_existing_web_history(self) -> None:
@@ -230,7 +252,44 @@ class SlackActionServiceTests(unittest.TestCase):
             ["draft", "in_review", "approved"],
         )
         self.assertEqual(len(self.response_updates), 2)
-        self.assertEqual(client.ephemeral_messages, [])
+        self.assertEqual(
+            client.ephemeral_messages[0]["text"],
+            "This request has already been decided.",
+        )
+
+    def test_success_is_not_shown_until_saved_status_is_confirmed(self) -> None:
+        client = _SlackClient()
+        real_history = self.workflow.history
+
+        def stale_history(request_id: str) -> dict:
+            history = real_history(request_id)
+            history["request"]["status"] = "in_review"
+            return history
+
+        with patch.object(
+            self.workflow,
+            "history",
+            side_effect=stale_history,
+        ) as history:
+            self.service.handle_approve(
+                ack=_Ack(),
+                body=self._action_body(),
+                client=client,
+            )
+
+        self.assertEqual(
+            history.call_args_list,
+            [call(self.request["id"]), call(self.request["id"])],
+        )
+        self.assertEqual(
+            self.workflow.store.get_request(self.request["id"])["status"],
+            "approved",
+        )
+        self.assertEqual(self.response_updates, [])
+        self.assertEqual(
+            client.ephemeral_messages[0]["text"],
+            "The saved request status could not be confirmed. Open it in Web.",
+        )
 
     def test_slack_update_failure_does_not_rollback_decision(self) -> None:
         client = _SlackClient()

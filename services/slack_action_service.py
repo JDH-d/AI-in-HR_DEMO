@@ -26,6 +26,12 @@ DECLINE_ACTION_ID = "decline_request"
 DECLINE_VIEW_CALLBACK_ID = "decline_request_modal"
 DECLINE_REASON_BLOCK_ID = "decline_reason_block"
 DECLINE_REASON_ACTION_ID = "decline_reason"
+ALREADY_DECIDED_MESSAGE = "This request has already been decided."
+REQUEST_NOT_FOUND_MESSAGE = "Request not found."
+MANAGER_NOT_ALLOWED_MESSAGE = "You are not allowed to manage this request."
+DECLINE_REASON_REQUIRED_MESSAGE = (
+    "Please enter a reason for declining this request."
+)
 PostRequest = Callable[..., requests.Response]
 
 
@@ -123,7 +129,7 @@ class SlackActionService:
             self._post_ephemeral(
                 client,
                 body,
-                "You are not authorized to manage PeopleFlow requests.",
+                MANAGER_NOT_ALLOWED_MESSAGE,
             )
             return
 
@@ -134,18 +140,20 @@ class SlackActionService:
                 target="approved",
                 identity=identity,
             )
-        except InvalidTransitionError as exc:
-            current = self._find_request(request_id)
-            if current is not None:
-                self._update_original_message(
-                    client,
-                    body,
-                    channel_id,
-                    response_url,
-                    current,
-                )
+        except InvalidTransitionError:
+            try:
+                current = self._read_request(request_id)
+            except WorkflowNotFoundError:
+                self._post_ephemeral(client, body, REQUEST_NOT_FOUND_MESSAGE)
                 return
-            self._post_ephemeral(client, body, self._decision_error_message(exc))
+            self._update_original_message(
+                client,
+                body,
+                channel_id,
+                response_url,
+                current,
+            )
+            self._post_ephemeral(client, body, ALREADY_DECIDED_MESSAGE)
             return
         except (
             WorkflowNotFoundError,
@@ -178,7 +186,7 @@ class SlackActionService:
             self._post_ephemeral(
                 client,
                 body,
-                "You are not authorized to manage PeopleFlow requests.",
+                MANAGER_NOT_ALLOWED_MESSAGE,
             )
             return
 
@@ -232,9 +240,7 @@ class SlackActionService:
             ack(
                 response_action="errors",
                 errors={
-                    DECLINE_REASON_BLOCK_ID: (
-                        "You are not authorized to manage PeopleFlow requests."
-                    )
+                    DECLINE_REASON_BLOCK_ID: MANAGER_NOT_ALLOWED_MESSAGE
                 },
             )
             return
@@ -252,7 +258,7 @@ class SlackActionService:
             ack(
                 response_action="errors",
                 errors={
-                    DECLINE_REASON_BLOCK_ID: "Enter a reason for declining this request."
+                    DECLINE_REASON_BLOCK_ID: DECLINE_REASON_REQUIRED_MESSAGE
                 },
             )
             return
@@ -366,6 +372,7 @@ class SlackActionService:
                 {
                     "type": "input",
                     "block_id": DECLINE_REASON_BLOCK_ID,
+                    "optional": True,
                     "label": {
                         "type": "plain_text",
                         "text": "Reason",
@@ -435,15 +442,8 @@ class SlackActionService:
                 ),
             )
 
-    def _find_request(self, request_id: str) -> dict | None:
-        return next(
-            (
-                request
-                for request in self.workflow_service.list_all(limit=1000)
-                if request["id"] == request_id
-            ),
-            None,
-        )
+    def _read_request(self, request_id: str) -> dict:
+        return self.workflow_service.history(request_id)["request"]
 
     @staticmethod
     def _post_ephemeral(client, body: dict, text: str) -> None:
@@ -466,12 +466,11 @@ class SlackActionService:
     @staticmethod
     def _decision_error_message(exc: Exception) -> str:
         if isinstance(exc, InvalidTransitionError):
-            status = exc.current_status.replace("_", " ")
-            return f"This request is already {status}. Open it in Web for details."
+            return ALREADY_DECIDED_MESSAGE
         if isinstance(exc, WorkflowNotFoundError):
-            return "The request could not be found. Open PeopleFlow in Web."
+            return REQUEST_NOT_FOUND_MESSAGE
         if isinstance(exc, WorkflowPermissionError):
-            return "You are not authorized to manage PeopleFlow requests."
+            return MANAGER_NOT_ALLOWED_MESSAGE
         if isinstance(exc, WorkflowValidationError):
             return str(exc)
         return "PeopleFlow could not process this Slack action."

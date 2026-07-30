@@ -50,6 +50,15 @@ transition remains valid and an ephemeral warning is attempted. Slack startup
 or notification failures do not block Web. Integration logs are redacted and
 do not contain webhook URLs or tokens.
 
+Before showing a successful Slack result, PeopleFlow reads the request again
+from the workflow database and confirms the saved final status. Stale actions
+and validation failures return these English messages:
+
+- repeated action: `This request has already been decided.`
+- missing request: `Request not found.`
+- unauthorized Slack user: `You are not allowed to manage this request.`
+- empty decline reason: `Please enter a reason for declining this request.`
+
 ## Configure the existing Slack app
 
 1. Go to [Slack API apps](https://api.slack.com/apps) and create an app for the
@@ -92,6 +101,39 @@ a new webhook URL; use the latest one for the selected channel.
 For a local demo, the **Open in Web** button works on the same computer where
 the React frontend is running. Replace `PUBLIC_WEB_BASE_URL` with a reachable
 HTTPS URL when the application is deployed.
+
+## Socket Mode security
+
+Manager actions use Slack Socket Mode. PeopleFlow opens an authenticated
+WebSocket connection to Slack with `SLACK_APP_TOKEN`; Slack does not send
+actions to a public PeopleFlow HTTP Request URL. The bot token is read from
+`SLACK_BOT_TOKEN`, and no Slack credential is stored in source code.
+
+Because there is no inbound Slack HTTP endpoint in this architecture,
+`SLACK_SIGNING_SECRET`, `X-Slack-Signature`, and
+`X-Slack-Request-Timestamp` validation do not apply. Bolt also skips its HTTP
+request-verification middleware for Socket Mode payloads. If the integration
+is changed to use an HTTP Request URL, add `SLACK_SIGNING_SECRET` to the local
+environment and verify both the signature and the request age before
+processing any action.
+
+## Start locally
+
+From the repository root, start the API and Web application with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_demo.ps1
+```
+
+To restart already running demo processes without rebuilding the document
+index, use:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_demo.ps1 -ForceRestart -SkipIndexRebuild
+```
+
+Open `http://127.0.0.1:5173` after the script reports that the services are
+ready.
 
 ## Disable notifications
 

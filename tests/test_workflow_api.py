@@ -182,6 +182,29 @@ class WorkflowV1APITests(unittest.TestCase):
         self.assertEqual(persisted.status_code, 200)
         self.assertEqual(persisted.json()["request"]["status"], "in_review")
 
+    def test_slack_failure_does_not_undo_manager_approval(self) -> None:
+        request = self._review_request()
+        self.slack_notifier.reset_mock()
+        self.slack_notifier.notify_request.side_effect = RuntimeError(
+            "Slack unavailable"
+        )
+
+        approved = self.client.post(
+            f"/api/v1/requests/{request['id']}/approve",
+            headers=self.manager_headers,
+            json={"comment": "Approved in Web"},
+        )
+        persisted = self.client.get(
+            f"/api/v1/requests/{request['id']}",
+            headers=self.manager_headers,
+        )
+
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(approved.json()["request"]["status"], "approved")
+        self.assertEqual(persisted.status_code, 200)
+        self.assertEqual(persisted.json()["request"]["status"], "approved")
+        self.slack_notifier.notify_request.assert_called_once()
+
     def test_knowledge_admin_cannot_create_or_approve_request(self) -> None:
         create = self.client.post(
             "/api/v1/requests",

@@ -3,7 +3,6 @@ from __future__ import annotations
 from services.auth_service import DemoIdentity
 from workflow import (
     InvalidTransitionError,
-    WorkflowNotFoundError,
     WorkflowPermissionError,
     WorkflowService,
     WorkflowValidationError,
@@ -30,22 +29,19 @@ def decide_request(
         )
 
     cleaned_request_id = request_id.strip()
-    request = next(
-        (
-            item
-            for item in workflow_service.list_all(limit=1000)
-            if item["id"] == cleaned_request_id
-        ),
-        None,
-    )
-    if request is None:
-        raise WorkflowNotFoundError("The workflow request could not be found.")
+    request = workflow_service.history(cleaned_request_id)["request"]
     if request["status"] != "in_review":
         raise InvalidTransitionError(request["status"], normalized_target)
 
-    return workflow_service.transition(
+    workflow_service.transition(
         cleaned_request_id,
         normalized_target,
         actor=identity.id,
         comment=comment.strip(),
     )
+    persisted_request = workflow_service.history(cleaned_request_id)["request"]
+    if persisted_request["status"] != normalized_target:
+        raise WorkflowValidationError(
+            ["The saved request status could not be confirmed. Open it in Web."]
+        )
+    return persisted_request
