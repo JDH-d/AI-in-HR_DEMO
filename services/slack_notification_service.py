@@ -18,12 +18,14 @@ class SlackNotificationService:
         self,
         *,
         enabled: bool,
+        actions_enabled: bool = False,
         webhook_url: str,
         public_web_base_url: str,
         timeout_seconds: float = 3.0,
         post_request: PostRequest = requests.post,
     ) -> None:
         self.enabled = enabled
+        self.actions_enabled = actions_enabled
         self.webhook_url = webhook_url.strip()
         self.public_web_base_url = public_web_base_url.strip().rstrip("/")
         self.timeout_seconds = timeout_seconds
@@ -93,24 +95,50 @@ class SlackNotificationService:
             },
             {"type": "section", "fields": fields},
         ]
+        action_elements: list[dict] = []
+        full_request_id = str(request.get("id", "")).strip()
+        if status == "in_review" and self.actions_enabled and full_request_id:
+            action_elements.extend(
+                [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Approve",
+                            "emoji": True,
+                        },
+                        "style": "primary",
+                        "value": full_request_id,
+                        "action_id": "approve_request",
+                    },
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Decline",
+                            "emoji": True,
+                        },
+                        "style": "danger",
+                        "value": full_request_id,
+                        "action_id": "decline_request",
+                    },
+                ]
+            )
         if open_url:
-            blocks.append(
+            action_elements.append(
                 {
-                    "type": "actions",
-                    "elements": [
-                        {
-                            "type": "button",
-                            "text": {
-                                "type": "plain_text",
-                                "text": "Open in Web",
-                                "emoji": True,
-                            },
-                            "url": open_url,
-                            "action_id": "open_request_in_web",
-                        }
-                    ],
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Open in Web",
+                        "emoji": True,
+                    },
+                    "url": open_url,
+                    "action_id": "open_request_in_web",
                 }
             )
+        if action_elements:
+            blocks.append({"type": "actions", "elements": action_elements})
 
         return {
             "text": (

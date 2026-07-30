@@ -70,7 +70,15 @@ AI_SETTINGS_PATH = _resolve_path(os.getenv("AI_SETTINGS_PATH", "data/ai_settings
 LOG_USER_TEXT_MODE = (os.getenv("LOG_USER_TEXT_MODE", "masked") or "masked").strip().lower()
 
 SLACK_NOTIFICATIONS_ENABLED = _get_bool("SLACK_NOTIFICATIONS_ENABLED", False)
+SLACK_ACTIONS_ENABLED = _get_bool("SLACK_ACTIONS_ENABLED", False)
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "").strip()
+SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN", "").strip()
+SLACK_MANAGER_USER_IDS = [
+    user_id.strip()
+    for user_id in os.getenv("SLACK_MANAGER_USER_IDS", "").split(",")
+    if user_id.strip()
+]
 SLACK_TIMEOUT_SECONDS = _get_float("SLACK_TIMEOUT_SECONDS", 3.0, 0.5, 10.0)
 PUBLIC_WEB_BASE_URL = (
     os.getenv(

@@ -5,8 +5,9 @@ channel. A separate channel keeps workflow events out of general conversation
 and makes the integration easy to demonstrate. Use a private channel instead
 before sending real employee data.
 
-Slack is a notification surface only. The application and its SQLite workflow
-database remain the source of truth for request status.
+Slack is a notification and manager-action surface. The application and its
+SQLite workflow database remain the source of truth for request status. Slack
+does not introduce a separate request status or a separate HR bot.
 
 ## Events
 
@@ -20,35 +21,73 @@ Draft creation does not notify Slack. Cancelling a request does not currently
 notify Slack.
 
 Each English message includes the request ID, type, dates, employee, current
-status, and an **Open in Web** button. The button opens:
+status, and an **Open in Web** button. An `in_review` card also contains
+**Approve** and **Decline** in this exact order:
+
+1. **Approve**
+2. **Decline**
+3. **Open in Web**
+
+The two decision buttons are added to the existing notification card; no
+second action card is created. After a Slack decision, that same card is
+updated to the final status and its decision buttons are removed.
+
+**Decline** opens a Slack modal with a required reason. The reason is saved in
+the existing workflow event history and is visible in Web. **Open in Web**
+opens:
 
 ```text
 <PUBLIC_WEB_BASE_URL>/manager?request=<request-id>
 ```
 
-If Slack is unavailable, the saved workflow transition and the Web response
-still succeed. The integration logs a redacted warning and does not log the
-webhook URL.
+Only Slack user IDs listed in `SLACK_MANAGER_USER_IDS` are mapped to the
+existing `manager.demo` identity. The shared decision service verifies that
+the mapped identity has the `manager` role before changing data and uses the
+same `in_review -> approved/declined` transitions as Web.
 
-## Configure an Incoming Webhook
+If Slack cannot refresh a card after saving a decision, the saved workflow
+transition remains valid and an ephemeral warning is attempted. Slack startup
+or notification failures do not block Web. Integration logs are redacted and
+do not contain webhook URLs or tokens.
+
+## Configure the existing Slack app
 
 1. Go to [Slack API apps](https://api.slack.com/apps) and create an app for the
    `HR-Bot Slack` workspace.
 2. Enable **Incoming Webhooks**.
 3. Add a webhook to the `#hr-requests-demo` channel.
-4. Copy the generated webhook URL directly into the local `.env` file. Never
+4. Enable **Socket Mode**.
+5. Create an app-level token with only `connections:write`.
+6. Enable **Interactivity & Shortcuts**.
+7. Add the bot scope `chat:write` and reinstall the app to the workspace.
+8. During reinstall, select `#hr-requests-demo` for the webhook.
+9. Copy the generated secrets directly into the local `.env` file. Never
    paste it into source code, documentation, chat, or Git.
-5. Set the following values:
+10. Copy the Slack Member ID of each allowed manager into
+    `SLACK_MANAGER_USER_IDS`. Member IDs are not passwords, but the allowlist
+    still belongs in local configuration.
+11. Set the following values:
 
 ```dotenv
 SLACK_NOTIFICATIONS_ENABLED=true
+SLACK_ACTIONS_ENABLED=true
 SLACK_WEBHOOK_URL=<your-local-secret>
+SLACK_BOT_TOKEN=<your-local-xoxb-token>
+SLACK_APP_TOKEN=<your-local-xapp-token>
+SLACK_MANAGER_USER_IDS=<allowed-manager-slack-user-id>
 SLACK_TIMEOUT_SECONDS=3
 PUBLIC_WEB_BASE_URL=http://127.0.0.1:5173
 ```
 
-The incoming webhook is bound to the selected channel, so the application does
-not need a Slack channel ID or a bot token.
+Use a comma-separated list when several Slack users should act as the existing
+demo manager:
+
+```dotenv
+SLACK_MANAGER_USER_IDS=U01234567,U07654321
+```
+
+Keep only one `SLACK_WEBHOOK_URL` entry in `.env`. Reinstalling an app creates
+a new webhook URL; use the latest one for the selected channel.
 
 For a local demo, the **Open in Web** button works on the same computer where
 the React frontend is running. Replace `PUBLIC_WEB_BASE_URL` with a reachable
@@ -60,16 +99,25 @@ Set:
 
 ```dotenv
 SLACK_NOTIFICATIONS_ENABLED=false
+SLACK_ACTIONS_ENABLED=false
 ```
 
-No Slack request is attempted when notifications are disabled.
+No notification is attempted when notifications are disabled. No Socket Mode
+connection is started when actions are disabled.
 
 ## Verification
 
 1. Start the application.
 2. Log in as `employee` and create a draft. Confirm that Slack stays unchanged.
 3. Submit the request. Confirm that Slack shows `IN REVIEW`.
-4. Use **Open in Web**, log in as `manager`, and open the exact request.
-5. Approve or decline it. Confirm that Slack shows the final status.
-6. Temporarily use an invalid local webhook value and confirm that the request
+4. Click **Approve**. Confirm that the same card changes to `APPROVED` and Web
+   immediately shows the same status.
+5. Submit another request and click **Decline**. Confirm that Slack requires a
+   reason and the same card changes to `DECLINED`.
+6. Open the declined request in Web and confirm that its event history contains
+   the Slack decline reason.
+7. Use **Open in Web** and confirm that it opens the exact request.
+8. Try a Slack user not listed in `SLACK_MANAGER_USER_IDS` and confirm that the
+   request stays `in_review`.
+9. Temporarily use an invalid local webhook value and confirm that the request
    still changes status in Web.

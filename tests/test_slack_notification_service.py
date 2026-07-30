@@ -25,6 +25,7 @@ class SlackNotificationServiceTests(unittest.TestCase):
     def test_builds_english_block_message_with_web_link(self) -> None:
         service = SlackNotificationService(
             enabled=True,
+            actions_enabled=True,
             webhook_url="https://example.test/slack-webhook",
             public_web_base_url="http://127.0.0.1:5173",
         )
@@ -39,11 +40,59 @@ class SlackNotificationServiceTests(unittest.TestCase):
         self.assertIn("*Dates:*\nApr 10-12, 2030", fields)
         self.assertIn("*Employee:*\nDemo Employee", fields)
         self.assertIn("*Status:*\nIN REVIEW", fields)
-        button = payload["blocks"][2]["elements"][0]
-        self.assertEqual(button["text"]["text"], "Open in Web")
+        buttons = payload["blocks"][2]["elements"]
         self.assertEqual(
-            button["url"],
+            [button["text"]["text"] for button in buttons],
+            ["Approve", "Decline", "Open in Web"],
+        )
+        self.assertEqual(
+            [button["action_id"] for button in buttons],
+            ["approve_request", "decline_request", "open_request_in_web"],
+        )
+        self.assertEqual(buttons[0]["style"], "primary")
+        self.assertEqual(buttons[1]["style"], "danger")
+        self.assertEqual(buttons[0]["value"], self.request["id"])
+        self.assertEqual(buttons[1]["value"], self.request["id"])
+        self.assertEqual(
+            buttons[2]["url"],
             "http://127.0.0.1:5173/manager?request=a31f99c2d6e94aa6",
+        )
+
+    def test_final_message_has_only_open_in_web_action(self) -> None:
+        service = SlackNotificationService(
+            enabled=True,
+            actions_enabled=True,
+            webhook_url="https://example.test/slack-webhook",
+            public_web_base_url="http://127.0.0.1:5173",
+        )
+        self.request["status"] = "approved"
+
+        payload = service.build_message(self.request, "Demo Employee")
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        buttons = payload["blocks"][2]["elements"]
+        self.assertEqual(
+            [button["action_id"] for button in buttons],
+            ["open_request_in_web"],
+        )
+
+    def test_decision_buttons_are_omitted_when_actions_are_disabled(self) -> None:
+        service = SlackNotificationService(
+            enabled=True,
+            actions_enabled=False,
+            webhook_url="https://example.test/slack-webhook",
+            public_web_base_url="http://127.0.0.1:5173",
+        )
+
+        payload = service.build_message(self.request, "Demo Employee")
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        buttons = payload["blocks"][2]["elements"]
+        self.assertEqual(
+            [button["action_id"] for button in buttons],
+            ["open_request_in_web"],
         )
 
     def test_ignores_drafts(self) -> None:

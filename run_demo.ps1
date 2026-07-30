@@ -10,6 +10,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Resolve-Python {
+    $workspacePython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+    if (Test-Path $workspacePython) {
+        return @{
+            FilePath = $workspacePython
+            PrefixArgs = @()
+        }
+    }
     if (Get-Command python -ErrorAction SilentlyContinue) {
         return @{
             FilePath = "python"
@@ -83,6 +90,7 @@ function Start-DemoProcess {
         -WorkingDirectory $WorkingDirectory `
         -RedirectStandardOutput $stdoutPath `
         -RedirectStandardError $stderrPath `
+        -WindowStyle Hidden `
         -PassThru
 }
 

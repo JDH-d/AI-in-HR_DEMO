@@ -30,6 +30,7 @@ from services.conversation_service import (
     ConversationNotFoundError,
     ConversationValidationError,
 )
+from services.request_decision_service import decide_request
 from services.runtime import (
     ai_settings_service,
     auth_service,
@@ -568,26 +569,20 @@ def _manager_decision(
     identity: DemoIdentity,
     comment: str,
 ) -> dict:
-    if target == "declined" and not comment.strip():
-        raise HTTPException(
-            status_code=422,
-            detail="A manager comment is required when declining a request.",
-        )
-    request = _request_for_identity(request_id, identity)
-    if request["status"] != "in_review":
-        raise HTTPException(
-            status_code=409,
-            detail=f"Request in status {request['status']} cannot be {target}.",
-        )
     try:
-        result = workflow_service.transition(
-            request_id,
-            target,
-            actor=identity.id,
+        result = decide_request(
+            workflow_service,
+            request_id=request_id,
+            target=target,
+            identity=identity,
             comment=comment,
         )
         _notify_slack(result, _display_name_for(result["applicant"]))
         return result
+    except WorkflowPermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
     except WorkflowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidTransitionError as exc:
