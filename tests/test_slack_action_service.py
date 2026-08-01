@@ -2,7 +2,7 @@ import shutil
 import unittest
 from copy import deepcopy
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 import requests
 
@@ -12,6 +12,7 @@ from services.slack_action_service import (
     DECLINE_VIEW_CALLBACK_ID,
     SlackActionService,
 )
+from services.slack_hr_command_service import SLACK_HR_COMMAND
 from services.slack_notification_service import SlackNotificationService
 from workflow import WorkflowService
 
@@ -356,6 +357,41 @@ class SlackActionServiceTests(unittest.TestCase):
         self.assertTrue(handlers[0].connected)
         service.stop()
         self.assertTrue(handlers[0].closed)
+
+    def test_hr_command_is_registered_on_existing_socket_app(self) -> None:
+        handlers: list[_SocketHandler] = []
+
+        def handler_factory(app, app_token: str) -> _SocketHandler:
+            handler = _SocketHandler(app, app_token)
+            handlers.append(handler)
+            return handler
+
+        notifier = SlackNotificationService(
+            enabled=True,
+            actions_enabled=True,
+            webhook_url="https://example.test/slack-webhook",
+            public_web_base_url="http://127.0.0.1:5173",
+        )
+        hr_command_service = Mock()
+        service = SlackActionService(
+            enabled=True,
+            bot_token="xoxb-test",
+            app_token="xapp-test",
+            manager_user_ids=["U_MANAGER"],
+            workflow_service=self.workflow,
+            notification_service=notifier,
+            hr_command_service=hr_command_service,
+            handler_factory=handler_factory,
+        )
+        bolt_app = Mock()
+
+        with patch("slack_bolt.App", return_value=bolt_app):
+            self.assertTrue(service.start())
+
+        self.assertEqual(len(handlers), 1)
+        self.assertIs(handlers[0].app, bolt_app)
+        bolt_app.command.assert_called_once_with(SLACK_HR_COMMAND)
+        bolt_app.command.return_value.assert_called_once_with(hr_command_service.handle_command)
 
     def _opened_decline_view(self, client: _SlackClient) -> dict:
         self.service.handle_decline(

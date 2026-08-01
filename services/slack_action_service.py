@@ -17,6 +17,7 @@ from workflow import (
     WorkflowValidationError,
 )
 
+from .slack_hr_command_service import SLACK_HR_COMMAND, SlackHRCommandService
 from .slack_notification_service import SlackNotificationService
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class SlackActionService:
         manager_user_ids: list[str],
         workflow_service: WorkflowService,
         notification_service: SlackNotificationService,
+        hr_command_service: SlackHRCommandService | None = None,
         handler_factory: Callable[[Any, str], Any] | None = None,
         post_request: PostRequest = requests.post,
         response_timeout_seconds: float = 3.0,
@@ -57,6 +59,7 @@ class SlackActionService:
         )
         self.workflow_service = workflow_service
         self.notification_service = notification_service
+        self.hr_command_service = hr_command_service
         self._handler_factory = handler_factory
         self._post_request = post_request
         self.response_timeout_seconds = response_timeout_seconds
@@ -86,6 +89,8 @@ class SlackActionService:
             bolt_app.view(DECLINE_VIEW_CALLBACK_ID)(
                 self.handle_decline_submission
             )
+            if self.hr_command_service is not None:
+                bolt_app.command(SLACK_HR_COMMAND)(self.hr_command_service.handle_command)
             factory = self._handler_factory or SocketModeHandler
             handler = factory(bolt_app, self.app_token)
             handler.connect()

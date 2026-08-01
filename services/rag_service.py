@@ -196,17 +196,26 @@ class RAGService:
         lowered_query = (query_text or "").strip().lower()
         if not lowered_query or not lowered_query.endswith("?"):
             return ""
+        query_terms = set(self.document_service._extract_keywords(query_text))
 
         for result in results[:3]:
             text = (result.get("text") or "").strip()
             if not text:
                 continue
             normalized_text = re.sub(r"#{2,6}\s*", ". ", text)
-            lowered_text = normalized_text.lower()
-            idx = lowered_text.find(lowered_query)
-            if idx < 0:
-                continue
-            tail = normalized_text[idx + len(lowered_query) :].strip(" :-\n\t")
+            section = str(result.get("section") or "").strip()
+            section_terms = set(self.document_service._extract_keywords(section))
+            section_matches = self._normalize_sentence(section) == self._normalize_sentence(
+                query_text
+            ) or (len(query_terms) >= 2 and query_terms.issubset(section_terms))
+            if section_matches:
+                tail = normalized_text.strip(" :-\n\t")
+            else:
+                lowered_text = normalized_text.lower()
+                idx = lowered_text.find(lowered_query)
+                if idx < 0:
+                    continue
+                tail = normalized_text[idx + len(lowered_query) :].strip(" :-\n\t")
             if not tail:
                 continue
             parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", tail) if part.strip()]

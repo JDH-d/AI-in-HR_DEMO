@@ -1,13 +1,35 @@
-# Slack request notifications
+# Slack integration
 
 PeopleFlow sends demo request notifications to the public `#hr-requests-demo`
 channel. A separate channel keeps workflow events out of general conversation
 and makes the integration easy to demonstrate. Use a private channel instead
 before sending real employee data.
 
-Slack is a notification and manager-action surface. The application and its
-SQLite workflow database remain the source of truth for request status. Slack
-does not introduce a separate request status or a separate HR bot.
+Use the public `#hr-bot` channel for HR knowledge questions. The `/hr` command
+is available workspace-wide, but a dedicated channel keeps the demo focused.
+
+Slack is a notification, manager-action, and HR question surface. The
+application remains the source of truth for request status and knowledge.
+There is one Slack app, one bot, and one Socket Mode connection.
+
+## HR knowledge command
+
+Ask an HR question with:
+
+```text
+/hr When are salaries paid?
+```
+
+The command passes the original question to the same `chat_service` used by
+Web. It does not contain Slack-only answers or a separate knowledge base.
+Workflow creation is disabled for this surface with `allow_workflow=False`, so
+PTO wording is answered as a knowledge question and cannot create a request.
+
+A successful response is posted in the channel and shows the original question,
+the answer, and grouped source titles with their unique supporting sections.
+Internal file names such as `PTO_Policy.md` are not shown in Slack. An empty
+command shows a private usage hint. Service errors show a short private message
+without a stack trace or technical details.
 
 ## Events
 
@@ -61,21 +83,52 @@ and validation failures return these English messages:
 
 ## Configure the existing Slack app
 
-1. Go to [Slack API apps](https://api.slack.com/apps) and create an app for the
-   `HR-Bot Slack` workspace.
-2. Enable **Incoming Webhooks**.
-3. Add a webhook to the `#hr-requests-demo` channel.
-4. Enable **Socket Mode**.
-5. Create an app-level token with only `connections:write`.
-6. Enable **Interactivity & Shortcuts**.
-7. Add the bot scope `chat:write` and reinstall the app to the workspace.
-8. During reinstall, select `#hr-requests-demo` for the webhook.
-9. Copy the generated secrets directly into the local `.env` file. Never
-   paste it into source code, documentation, chat, or Git.
-10. Copy the Slack Member ID of each allowed manager into
-    `SLACK_MANAGER_USER_IDS`. Member IDs are not passwords, but the allowlist
-    still belongs in local configuration.
-11. Set the following values:
+Do not create a second app for `/hr`. Notifications, manager buttons, and the
+knowledge command are all connected through the existing **PeopleFlow
+Notifications** app.
+
+Create the public `#hr-requests-demo` and `#hr-bot` channels in the workspace
+before configuring the app. Use the first for request cards and the second for
+HR questions.
+
+### Settings in Slack API
+
+1. Open [Slack API apps](https://api.slack.com/apps), choose **Create New App**,
+   select **From scratch**, choose the `HR-Bot Slack` workspace, and create the
+   app.
+2. Open **Incoming Webhooks**, turn the feature on, choose **Add New Webhook to
+   Workspace**, and select `#hr-requests-demo`.
+3. Open **Basic Information** -> **App-Level Tokens**, generate an app token
+   with only the `connections:write` scope, and keep the resulting `xapp-...`
+   value for `SLACK_APP_TOKEN`.
+4. Open **Socket Mode**, enable it, and select the app-level token created in
+   the previous step.
+5. Open **Interactivity & Shortcuts** and enable interactivity. A public Request
+   URL is not needed because actions arrive through Socket Mode.
+6. Open **Slash Commands**, create `/hr`, set a description such as
+   `Ask PeopleFlow an HR question`, and optionally use
+   `[question about payroll, PTO, benefits, schedules, or IT]` as the usage
+   hint. A public Request URL is not required in Socket Mode.
+7. Open **OAuth & Permissions** -> **Scopes** and add these **Bot Token
+   Scopes**:
+   - `chat:write` for Slack messages and request-card updates;
+   - `commands` for `/hr`.
+8. Select **Install to Workspace** or **Reinstall to Workspace** after changing
+   commands or scopes. Copy the resulting `xoxb-...` **Bot User OAuth Token**
+   into `SLACK_BOT_TOKEN`.
+
+The four local values come from these places:
+
+| Local setting | Where to get it | Used for |
+| --- | --- | --- |
+| `SLACK_WEBHOOK_URL` | **Incoming Webhooks** | Request notifications in `#hr-requests-demo` |
+| `SLACK_BOT_TOKEN` | **OAuth & Permissions** | `/hr`, buttons, modals, and card updates |
+| `SLACK_APP_TOKEN` | **Basic Information** -> **App-Level Tokens** | The Socket Mode connection |
+| `SLACK_MANAGER_USER_IDS` | Slack profile -> **More** -> **Copy member ID** | Manager authorization |
+
+Copy these values directly into the local `.env` file. Never paste a real
+webhook, token, or `.env` content into source code, documentation, chat, or
+Git. Set:
 
 ```dotenv
 SLACK_NOTIFICATIONS_ENABLED=true
@@ -98,16 +151,50 @@ SLACK_MANAGER_USER_IDS=U01234567,U07654321
 Keep only one `SLACK_WEBHOOK_URL` entry in `.env`. Reinstalling an app creates
 a new webhook URL; use the latest one for the selected channel.
 
+`SLACK_ACTIONS_ENABLED=true` starts the single Socket Mode connection used by
+both manager actions and `/hr`. `SLACK_NOTIFICATIONS_ENABLED=true` separately
+enables outbound request notifications. Therefore `/hr` needs the bot and app
+tokens but does not use the incoming webhook.
+
 For a local demo, the **Open in Web** button works on the same computer where
 the React frontend is running. Replace `PUBLIC_WEB_BASE_URL` with a reachable
 HTTPS URL when the application is deployed.
 
+### Confirm the first connection
+
+1. Restart PeopleFlow so it reads the new environment values:
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run_demo.ps1 -ForceRestart -SkipIndexRebuild
+   ```
+
+2. In `#hr-bot`, run:
+
+   ```text
+   /hr When are salaries paid?
+   ```
+
+   A connected bot posts the original question, the answer, and its grouped
+   document sources in the channel.
+3. Submit a request in Web and confirm that an `IN REVIEW` card appears in
+   `#hr-requests-demo`.
+4. Use **Approve** or **Decline** as a Slack user listed in
+   `SLACK_MANAGER_USER_IDS`, then confirm that Web shows the same final state.
+
+If `/hr` is absent from Slack autocomplete, confirm that the slash command and
+the `commands` scope exist, then reinstall the app. If Slack reports
+`dispatch_failed`, confirm that PeopleFlow is running, Socket Mode is enabled,
+`SLACK_ACTIONS_ENABLED=true`, and the `xapp-...` token is current. If request
+cards do not arrive but `/hr` works, check the webhook URL, its selected
+channel, and `SLACK_NOTIFICATIONS_ENABLED`.
+
 ## Socket Mode security
 
-Manager actions use Slack Socket Mode. PeopleFlow opens an authenticated
-WebSocket connection to Slack with `SLACK_APP_TOKEN`; Slack does not send
-actions to a public PeopleFlow HTTP Request URL. The bot token is read from
-`SLACK_BOT_TOKEN`, and no Slack credential is stored in source code.
+Manager actions and `/hr` use the same Slack Socket Mode connection. PeopleFlow
+opens an authenticated WebSocket connection to Slack with `SLACK_APP_TOKEN`;
+Slack does not send actions or commands to a public PeopleFlow HTTP Request
+URL. The bot token is read from `SLACK_BOT_TOKEN`, and no Slack credential is
+stored in source code.
 
 Because there is no inbound Slack HTTP endpoint in this architecture,
 `SLACK_SIGNING_SECRET`, `X-Slack-Signature`, and
@@ -145,7 +232,7 @@ SLACK_ACTIONS_ENABLED=false
 ```
 
 No notification is attempted when notifications are disabled. No Socket Mode
-connection is started when actions are disabled.
+connection is started when actions are disabled, so `/hr` is also unavailable.
 
 ## Verification
 
@@ -163,3 +250,24 @@ connection is started when actions are disabled.
    request stays `in_review`.
 9. Temporarily use an invalid local webhook value and confirm that the request
    still changes status in Web.
+
+### Verify `/hr`
+
+Run the adapter tests without a real Slack workspace:
+
+```powershell
+python -m pytest -q tests/test_slack_hr_command_service.py
+```
+
+Then start the application and, in `#hr-bot`, ask:
+
+```text
+/hr When are salaries paid?
+/hr What is the PTO policy?
+/hr How do I get VPN access?
+```
+
+Ask the same three questions in Web. The wording can vary when an LLM is used,
+but the meaning and returned source set must match because both surfaces call
+the same service. Also verify that `/hr` without text shows a private usage
+hint and that a temporary service failure shows only a private generic error.

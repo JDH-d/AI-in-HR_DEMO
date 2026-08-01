@@ -40,7 +40,7 @@ class RAGServiceTests(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_answer_with_retrieval_uses_extractive_fallback_when_llm_is_unavailable(self) -> None:
-        query = ChatQuery(messages=[ChatTurn(role="user", content="How often are salaries paid?")])
+        query = ChatQuery(messages=[ChatTurn(role="user", content="When are salaries paid?")])
         decision = RoutingDecision(
             language="en",
             intent=Intent.WORK,
@@ -58,8 +58,8 @@ class RAGServiceTests(unittest.TestCase):
                 "version": "2026.1",
                 "section": "How often are salaries paid?",
                 "chunk_id": 0,
-                "text": "Salaries are paid on the fifteenth and the last business day of the month. Direct deposit is the standard payment method.",
-                "excerpt": "Salaries are paid on the fifteenth and the last business day of the month.",
+                "text": "Pacific Beacon pays on the fifteenth and the last business day of the month. Direct deposit is the standard payment method.",
+                "excerpt": "Pacific Beacon pays on the fifteenth and the last business day of the month.",
                 "score": 0.82,
             }
         ]
@@ -71,7 +71,7 @@ class RAGServiceTests(unittest.TestCase):
             outcome = self.rag_service.answer_with_retrieval(query, decision)
 
         self.assertIn(
-            "Salaries are paid on the fifteenth and the last business day of the month.",
+            "Pacific Beacon pays on the fifteenth and the last business day of the month.",
             outcome.content,
         )
         self.assertEqual(len(outcome.sources), 1)
