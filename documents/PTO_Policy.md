@@ -25,7 +25,7 @@ Employees should read it for baseline expectations, while managers and support f
 it as the shared reference point before creating one-off exceptions.
 
 When a situation touches other company processes, reviewers should also consult
-PTO_Vacation_Sick_Leave.docx, Work_Schedules_and_Shifts.md, Payroll_FAQ.md so decisions stay aligned
+Work_Schedules_and_Shifts.md and Payroll_FAQ.md so decisions stay aligned
 across payroll, scheduling, access, onboarding, or benefits workflows.
 
 ## Roles and Responsibilities

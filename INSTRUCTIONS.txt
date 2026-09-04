@@ -1,34 +1,39 @@
-AI HR Knowledge Assistant - Local Demo Instructions
+PeopleFlow AI 2.3 — local setup
 
-1. Prepare source documents
-- Put company knowledge base documents in documents/.
-- Supported formats: .txt, .md, .pdf, .docx.
+Requirements
+- Python 3.10+
+- Node.js 22+
+- Windows PowerShell
 
-2. Configure environment
-- Copy .env.example to .env.
-- Set OPENAI_API_KEY.
-- Set DEMO_AUTH_SECRET and DEMO_LOGIN_PASSWORD.
+First run
+1. Copy .env.example to .env.
+2. Put your OpenAI API key in .env.
+3. Run: .\run_demo.ps1 -InstallDeps
+4. Open: http://127.0.0.1:5173
 
-3. Install dependencies
-- pip install -r requirements.txt
-- cd frontend; npm install; cd ..
+Later runs
+- Start: .\run_demo.ps1
+- Stop:  .\stop_demo.ps1
+- Verify everything: .\smoke_check.ps1
 
-4. Start local demo services
-- powershell -ExecutionPolicy Bypass -File .\run_demo.ps1
+Demo users
+- employee
+- manager
+- knowledge_admin
+- Default password: demo-password
 
-5. Stop local demo services
-- powershell -ExecutionPolicy Bypass -File .\stop_demo.ps1
+Knowledge documents
+- Put .md, .txt, .pdf, or .docx files in documents/.
+- In Knowledge Admin > Documents, use Rebuild index after source changes.
+- Uploads rebuild automatically unless Auto-index uploads is disabled.
 
-6. Rebuild document index
-- Sign in as Knowledge Admin and use the document Index action.
+Main project areas
+- api/routes/: HTTP endpoints and role checks
+- services/: application behavior and dependency wiring
+- rag/: document indexing and retrieval
+- workflow_*.py: workflow rules, persistence, migrations, and use cases
+- frontend/src/features/: React workspaces and request UI
+- tests/: isolated backend coverage
+- frontend/src/**/*.test.ts(x): frontend coverage
 
-7. Validate retrieval quality
-- python -m scripts.run_rag_eval
-
-8. Project map
-- api/: FastAPI routes and schemas.
-- services/: chat, documents, logs, RAG runtime, and LLM integration.
-- rag/: retrieval, prompts, topic routing, and index bootstrap.
-- workflow.py: SQLite workflow request storage.
-- frontend/: React, TypeScript, Vite, Tailwind, and role-based workspaces.
-- web_ui/: legacy Streamlit reference implementation; not started by the demo script.
+See README.md for manual startup, advanced overrides, architecture, and validation commands.

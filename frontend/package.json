@@ -1,11 +1,13 @@
 {
   "name": "peopleflow-ai",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
+    "check": "biome check .",
+    "format": "biome format --write .",
     "test": "vitest run",
     "preview": "vite preview"
   },
@@ -21,6 +23,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.12",
     "@tailwindcss/vite": "4.3.2",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",

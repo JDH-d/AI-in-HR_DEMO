@@ -1,46 +1,31 @@
 param()
 
 $ErrorActionPreference = "Stop"
-
 $projectRoot = Split-Path -Parent $PSCommandPath
 if (-not $projectRoot) {
-    $projectRoot = (Get-Location).Path
+    throw "Unable to resolve the project root."
 }
+$projectRoot = [IO.Path]::GetFullPath($projectRoot)
+. (Join-Path $projectRoot "scripts\demo_processes.ps1")
 
 $pidFile = Join-Path $projectRoot ".demo_state\demo_processes.json"
-
-if (-not (Test-Path $pidFile)) {
-    Write-Host "No demo PID file found. Nothing to stop."
+$state = Read-DemoProcessState -Path $pidFile
+if (-not $state) {
+    Write-Host "No demo process state found. Nothing to stop."
     exit 0
 }
 
-try {
-    $meta = Get-Content -Path $pidFile -Raw -Encoding UTF8 | ConvertFrom-Json
-} catch {
-    Write-Warning "Cannot parse PID file. Remove it manually: $pidFile"
-    exit 1
+$result = Stop-DemoProcesses -State $state
+if ($result.unverified.Count -gt 0) {
+    throw (
+        "Refused to stop PID(s) $($result.unverified -join ', ') because their process identity " +
+        "does not match the saved demo state. The state file was kept for inspection: $pidFile"
+    )
 }
 
-$stopped = @()
-foreach ($name in @("api_pid", "frontend_pid", "user_ui_pid", "admin_ui_pid")) {
-    if (-not ($meta.PSObject.Properties.Name -contains $name)) {
-        continue
-    }
-    $pidValue = [int]$meta.$name
-    if ($pidValue -le 0) {
-        continue
-    }
-    $proc = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-    if ($proc) {
-        Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
-        $stopped += $pidValue
-    }
-}
-
-Remove-Item -Path $pidFile -Force
-
-if ($stopped.Count -gt 0) {
-    Write-Host "Stopped demo processes: $($stopped -join ', ')"
+Remove-Item -LiteralPath $pidFile -Force
+if ($result.stopped.Count -gt 0) {
+    Write-Host "Stopped demo processes: $($result.stopped -join ', ')"
 } else {
-    Write-Host "No running demo processes were found."
+    Write-Host "The recorded demo processes were already stopped."
 }

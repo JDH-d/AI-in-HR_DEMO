@@ -1,13 +1,11 @@
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app import app
-from core import settings
-from workflow import WorkflowService
+from app import create_app
+from tests.support import TEST_PASSWORD, build_test_services
 
 
 class WorkflowV1APITests(unittest.TestCase):
@@ -15,16 +13,17 @@ class WorkflowV1APITests(unittest.TestCase):
         self.temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName
         shutil.rmtree(self.temp_dir, ignore_errors=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.service = WorkflowService(str(self.temp_dir / "workflow.db"))
-        self.client = TestClient(app)
-        self.workflow_patch = patch("api.v1_routes.workflow_service", self.service)
-        self.workflow_patch.start()
+        self.services = build_test_services(self.temp_dir)
+        self.service = self.services.workflow
+        self.app = create_app(lambda: self.services)
+        self.client_context = TestClient(self.app)
+        self.client = self.client_context.__enter__()
         self.employee_headers = self._headers("employee")
         self.manager_headers = self._headers("manager")
         self.admin_headers = self._headers("knowledge_admin")
 
     def tearDown(self) -> None:
-        self.workflow_patch.stop()
+        self.client_context.__exit__(None, None, None)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_create_submit_get_and_feedback_contract(self) -> None:
@@ -36,12 +35,14 @@ class WorkflowV1APITests(unittest.TestCase):
                 "start_date": "2030-04-01",
                 "end_date": "2030-04-03",
                 "comment": "Family vacation",
+                "approver": "forged.manager",
             },
         )
         self.assertEqual(created.status_code, 201)
         draft = created.json()["request"]
         self.assertEqual(draft["status"], "draft")
         self.assertEqual(draft["applicant"], "employee.demo")
+        self.assertEqual(draft["approver"], "manager.demo")
 
         sent_for_review = self.client.post(
             f"/api/v1/requests/{draft['id']}/submit",
@@ -86,6 +87,80 @@ class WorkflowV1APITests(unittest.TestCase):
             [event["to_status"] for event in detail.json()["events"]],
             ["draft", "in_review", "approved"],
         )
+
+    def test_draft_is_private_until_the_employee_submits_it(self) -> None:
+        created = self.client.post(
+            "/api/v1/requests",
+            headers=self.employee_headers,
+            json={
+                "type": "pto",
+                "start_date": "2030-04-01",
+                "end_date": "2030-04-03",
+                "comment": "Private planning draft",
+            },
+        )
+        request_id = created.json()["request"]["id"]
+
+        manager_list = self.client.get("/api/v1/requests", headers=self.manager_headers)
+        manager_detail = self.client.get(
+            f"/api/v1/requests/{request_id}",
+            headers=self.manager_headers,
+        )
+        manager_action = self.client.post(
+            f"/api/v1/requests/{request_id}/approve",
+            headers=self.manager_headers,
+            json={},
+        )
+        employee_list = self.client.get("/api/v1/requests", headers=self.employee_headers)
+
+        self.assertEqual(manager_list.json()["requests"], [])
+        self.assertEqual(manager_detail.status_code, 404)
+        self.assertEqual(manager_action.status_code, 404)
+        self.assertEqual(
+            [request["id"] for request in employee_list.json()["requests"]],
+            [request_id],
+        )
+
+        submitted = self.client.post(
+            f"/api/v1/requests/{request_id}/submit",
+            headers=self.employee_headers,
+            json={},
+        )
+        visible = self.client.get("/api/v1/requests", headers=self.manager_headers)
+
+        self.assertEqual(submitted.status_code, 200)
+        self.assertEqual(
+            [request["id"] for request in visible.json()["requests"]],
+            [request_id],
+        )
+
+    def test_unshared_cancelled_draft_stays_private_from_manager(self) -> None:
+        created = self.client.post(
+            "/api/v1/requests",
+            headers=self.employee_headers,
+            json={
+                "type": "pto",
+                "start_date": "2030-04-01",
+                "end_date": "2030-04-03",
+                "comment": "Private planning draft",
+            },
+        )
+        request_id = created.json()["request"]["id"]
+        cancelled = self.client.post(
+            f"/api/v1/requests/{request_id}/cancel",
+            headers=self.employee_headers,
+            json={"comment": "No longer needed"},
+        )
+
+        manager_list = self.client.get("/api/v1/requests", headers=self.manager_headers)
+        manager_detail = self.client.get(
+            f"/api/v1/requests/{request_id}",
+            headers=self.manager_headers,
+        )
+
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(manager_list.json()["requests"], [])
+        self.assertEqual(manager_detail.status_code, 404)
 
     def test_sick_leave_is_reported_and_acknowledged_instead_of_approved(self) -> None:
         created = self.client.post(
@@ -292,7 +367,7 @@ class WorkflowV1APITests(unittest.TestCase):
     def _headers(self, username: str) -> dict:
         response = self.client.post(
             "/api/v1/auth/login",
-            json={"username": username, "password": settings.DEMO_LOGIN_PASSWORD},
+            json={"username": username, "password": TEST_PASSWORD},
         )
         self.assertEqual(response.status_code, 200)
         return {"Authorization": f"Bearer {response.json()['access_token']}"}

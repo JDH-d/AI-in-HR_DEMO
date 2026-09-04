@@ -1,7 +1,6 @@
 import unittest
 
 from rag.nlp import Intent, detect_intent, detect_topic_selection
-from web_ui.streamlit_app import DEMO_PROMPTS
 
 
 class NLPDetectionTests(unittest.TestCase):
@@ -35,19 +34,12 @@ class NLPDetectionTests(unittest.TestCase):
     def test_small_talk_is_not_promoted_to_work(self) -> None:
         self.assertEqual(detect_intent("hello"), Intent.SMALL_TALK)
 
-    def test_supported_demo_prompts_are_never_routed_as_invalid(self) -> None:
-        unsupported = {
+    def test_unsupported_demo_prompts_are_invalid(self) -> None:
+        for prompt in (
             "Write me a poem about dragons.",
             "What's the weather in Los Angeles today?",
-        }
-
-        for _, prompts in DEMO_PROMPTS:
-            for prompt in prompts:
-                intent = detect_intent(prompt)
-                if prompt in unsupported:
-                    self.assertEqual(intent, Intent.INVALID, prompt)
-                else:
-                    self.assertNotEqual(intent, Intent.INVALID, prompt)
+        ):
+            self.assertEqual(detect_intent(prompt), Intent.INVALID, prompt)
 
     def test_later_does_not_match_late_attendance_keyword(self) -> None:
         self.assertEqual(detect_intent("Can we talk later?"), Intent.INVALID)

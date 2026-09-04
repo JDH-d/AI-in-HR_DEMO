@@ -1,9 +1,40 @@
 import unittest
+from unittest.mock import Mock
 
 from rag.retriever import Retriever, build_relevant_excerpt
 
 
 class RetrieverTests(unittest.TestCase):
+    def test_query_uses_the_configured_embedding_model(self) -> None:
+        client = Mock()
+        client.embeddings.create.return_value = Mock(data=[Mock(embedding=[1.0, 0.0])])
+        retriever = Retriever(
+            [
+                {
+                    "source": "Payroll_FAQ.md",
+                    "chunk_id": 0,
+                    "text": "Salary timing",
+                    "embedding": [1.0, 0.0],
+                },
+                {
+                    "source": "IT_Support.md",
+                    "chunk_id": 1,
+                    "text": "VPN access",
+                    "embedding": [0.0, 1.0],
+                },
+            ],
+            client_factory=lambda: client,
+            embedding_model="test-embedding-model",
+        )
+
+        results = retriever.query("compensation cadence", top_k=2)
+
+        self.assertEqual([result["source"] for result in results], ["Payroll_FAQ.md"])
+        client.embeddings.create.assert_called_once_with(
+            model="test-embedding-model",
+            input=["compensation cadence"],
+        )
+
     def test_query_falls_back_to_lexical_matching_when_embeddings_are_unavailable(self) -> None:
         retriever = Retriever(
             [

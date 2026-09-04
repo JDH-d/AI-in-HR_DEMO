@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Optional
 
 
 class Intent(str, Enum):
@@ -21,9 +20,16 @@ SUPPORTED_TOPICS = [
 ]
 
 
-def detect_language(text: str) -> str:
+def detect_language(_: str) -> str:
     # The demo is intentionally English-first for portfolio review.
     return "en"
+
+
+def is_explicit_topic_choice(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    if re.match(r"^\d+\s*[).:\-]?\s*$", cleaned):
+        return detect_topic_selection(cleaned) is not None
+    return any(cleaned == topic.lower() for topic in SUPPORTED_TOPICS)
 
 
 def detect_intent(text: str) -> Intent:
@@ -39,7 +45,7 @@ def detect_intent(text: str) -> Intent:
     return Intent.INVALID
 
 
-def detect_topic_selection(text: str) -> Optional[str]:
+def detect_topic_selection(text: str) -> str | None:
     cleaned_raw = text.strip().lower()
     if not cleaned_raw:
         return None
@@ -139,7 +145,7 @@ def _is_small_talk(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
-_WORK_PATTERNS = [
+_WORK_PATTERNS = (
     r"\bpto\b",
     r"\bpaid time off\b",
     r"\bvacation(?: days)?\b",
@@ -186,11 +192,7 @@ _WORK_PATTERNS = [
     r"\bemployee onboarding\b",
     r"\blaptop\b",
     r"\bbadge access\b",
-    r"\bdocument request\b",
-    r"\bcertificate\b",
-    r"\bemployment letter\b",
-    r"\bdocument\b",
-]
+)
 
 
 def _is_work_related(text: str) -> bool:

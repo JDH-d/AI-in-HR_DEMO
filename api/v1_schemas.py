@@ -17,7 +17,6 @@ class StructuredRequestCreate(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     comment: str = ""
-    approver: str | None = None
     details: dict[str, object] = Field(default_factory=dict)
 
 
@@ -26,7 +25,6 @@ class RequestSubmit(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     comment: str | None = None
-    approver: str | None = None
     details: dict[str, object] | None = None
 
 

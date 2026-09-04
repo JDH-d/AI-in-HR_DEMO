@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class Message(BaseModel):
-    role: str = Field(..., description="user|assistant|system")
-    content: str
+    role: Literal["user", "assistant", "system"]
+    content: str = Field(..., min_length=1)
 
 
 class ChatRequest(BaseModel):
-    messages: List[Message]
-    top_k: Optional[int] = Field(4, ge=1, le=10)
-    min_similarity: Optional[float] = Field(0.25, ge=0.0, le=1.0)
+    messages: list[Message]
+    top_k: int | None = Field(4, ge=1, le=10)
+    min_similarity: float | None = Field(0.25, ge=0.0, le=1.0)
 
 
 class SourceChunk(BaseModel):
@@ -30,9 +30,9 @@ class WorkflowRequestView(BaseModel):
     id: str
     type: str
     type_label: str
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    duration_days: Optional[int] = None
+    start_date: str | None = None
+    end_date: str | None = None
+    duration_days: int | None = None
     comment: str
     applicant: str
     approver: str
@@ -40,21 +40,18 @@ class WorkflowRequestView(BaseModel):
     status: str
     created_at: str
     updated_at: str
-    validation_errors: List[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
     message: Message
     intent: str
     language: str
-    sources: Optional[List[SourceChunk]] = None
-    workflow_request: Optional[WorkflowRequestView] = None
-
-
-class SystemPromptUpdate(BaseModel):
-    system_prompt: str = Field(..., min_length=1)
+    outcome_code: str
+    sources: list[SourceChunk] | None = None
+    workflow_request: WorkflowRequestView | None = None
+    conversation_id: str | None = None
 
 
 class WorkflowCommentCreate(BaseModel):
     body: str = Field(..., min_length=1)
-    author: str = "Manager"

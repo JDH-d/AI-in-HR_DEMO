@@ -25,7 +25,7 @@ Employees should read it for baseline expectations, while managers and support f
 it as the shared reference point before creating one-off exceptions.
 
 When a situation touches other company processes, reviewers should also consult
-IT_Support_and_Access.md, IT_Support.txt, IT_Onboarding_Guide.md so decisions stay aligned across
+IT_Support_and_Access.md and IT_Onboarding_Guide.md so decisions stay aligned across
 payroll, scheduling, access, onboarding, or benefits workflows.
 
 ## Roles and Responsibilities

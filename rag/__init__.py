@@ -1,3 +1,3 @@
-from .index import ensure_index, get_retriever
+from .index import KnowledgeIndex
 
-__all__ = ["ensure_index", "get_retriever"]
+__all__ = ["KnowledgeIndex"]

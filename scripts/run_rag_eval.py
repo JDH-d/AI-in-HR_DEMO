@@ -25,9 +25,14 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
 def evaluate_cases(
     cases: list[dict[str, Any]],
     documents_dir: Path,
+    *,
+    use_embeddings: bool = False,
 ) -> dict[str, Any]:
     documents = load_documents(documents_dir)
-    items = build_index_items(documents, include_embeddings=False)
+    items = build_index_items(documents, include_embeddings=use_embeddings)
+    retrieval_mode = (
+        "embedding" if items and all(item.get("embedding") for item in items) else "lexical"
+    )
     retriever = Retriever(items)
     results: list[dict[str, Any]] = []
 
@@ -36,7 +41,7 @@ def evaluate_cases(
             case["question"],
             top_k=3,
             min_similarity=0.2,
-            use_embeddings=False,
+            use_embeddings=use_embeddings,
         )
         expected_source = case["expected_source"]
         expected_terms = [str(term).lower() for term in case.get("expected_terms", [])]
@@ -69,6 +74,7 @@ def evaluate_cases(
         "passed": passed_count,
         "total": total,
         "pass_rate": passed_count / total if total else 0.0,
+        "retrieval_mode": retrieval_mode,
         "results": results,
     }
 
@@ -78,20 +84,35 @@ def main() -> int:
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--documents", type=Path, default=DEFAULT_DOCUMENTS)
     parser.add_argument("--min-pass-rate", type=float, default=1.0)
+    parser.add_argument(
+        "--use-embeddings",
+        action="store_true",
+        help="Exercise the configured embedding model instead of the deterministic lexical path.",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
-    report = evaluate_cases(load_cases(args.dataset), args.documents)
+    report = evaluate_cases(
+        load_cases(args.dataset),
+        args.documents,
+        use_embeddings=args.use_embeddings,
+    )
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        print(f"RAG evaluation: {report['passed']}/{report['total']} ({report['pass_rate']:.1%})")
+        print(
+            f"RAG evaluation [{report['retrieval_mode']}]: "
+            f"{report['passed']}/{report['total']} ({report['pass_rate']:.1%})"
+        )
         for result in report["results"]:
             if not result["passed"]:
                 print(
                     f"- FAIL {result['id']}: sources={result['retrieved_sources']} "
                     f"missing={result['missing_terms']}"
                 )
+    if args.use_embeddings and report["retrieval_mode"] != "embedding":
+        print("Embedding evaluation was requested, but embeddings could not be created.")
+        return 2
     return 0 if report["pass_rate"] >= args.min_pass_rate else 1
 
 

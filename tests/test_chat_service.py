@@ -1,17 +1,17 @@
+from __future__ import annotations
+
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-from api.schemas import ChatRequest, Message
 from rag.index import build_index_items
 from rag.nlp import Intent
 from rag.retriever import Retriever
 from services.chat_fallbacks import ChatFallbackPolicy
-from services.chat_models import RoutingDecision
+from services.chat_models import ChatQuery, ChatTurn, RoutingDecision
 from services.chat_service import ChatService
 from services.document_reader import load_documents
-from services.document_service import DocumentService
 from services.llm_service import LLMServiceError
 from services.rag_service import RAGService
 from workflow import WorkflowService
@@ -20,6 +20,45 @@ from workflow import WorkflowService
 class FailingLLM:
     def generate(self, prompt_messages: list[dict]) -> str:
         raise LLMServiceError("LLM unavailable")
+
+    def stream_generate(self, prompt_messages: list[dict]):
+        raise LLMServiceError("LLM unavailable")
+        yield ""  # pragma: no cover
+
+
+class StreamingLLM(FailingLLM):
+    def stream_generate(self, prompt_messages: list[dict]):
+        yield "Grounded "
+        yield "answer"
+
+
+class EmptyStreamingLLM(FailingLLM):
+    def stream_generate(self, prompt_messages: list[dict]):
+        if False:
+            yield ""
+
+
+class PartialFailingLLM(FailingLLM):
+    def stream_generate(self, prompt_messages: list[dict]):
+        yield "Incomplete"
+        raise LLMServiceError("connection dropped")
+
+
+class StaticKnowledgeIndex:
+    def __init__(self, retriever: Retriever) -> None:
+        self.retriever = retriever
+        self.ensure_calls = 0
+
+    def ensure(self) -> None:
+        self.ensure_calls += 1
+
+    def get_retriever(self) -> Retriever:
+        return self.retriever
+
+
+class FailingKnowledgeIndex(StaticKnowledgeIndex):
+    def ensure(self) -> None:
+        raise RuntimeError("index unavailable")
 
 
 class RecordingLogService:
@@ -33,6 +72,7 @@ class RecordingLogService:
         intent: str,
         language: str,
         sources: list[dict] | None = None,
+        outcome_code: str = "unknown",
     ) -> None:
         self.entries.append(
             {
@@ -41,6 +81,7 @@ class RecordingLogService:
                 "intent": intent,
                 "language": language,
                 "sources": sources,
+                "outcome_code": outcome_code,
             }
         )
 
@@ -61,188 +102,240 @@ class ChatServiceTests(unittest.TestCase):
         self.docs_dir = self.temp_dir / "documents"
         self.docs_dir.mkdir(parents=True, exist_ok=True)
         (self.docs_dir / "Payroll_FAQ.md").write_text(
-            "Salaries are paid twice per month.\nPayroll is processed on the 15th and last day.",
+            "# Payroll\n\n## How often are salaries paid?\n\n"
+            "Salaries are paid twice per month. Payroll is processed on the 15th and last day.",
             encoding="utf-8",
         )
-        self.workflow_db = self.temp_dir / "workflow.db"
-        self.document_service = DocumentService(self.docs_dir)
-        self.log_service = RecordingLogService()
         retriever = Retriever(
             build_index_items(load_documents(self.docs_dir), include_embeddings=False)
         )
-        rag_service = RAGService(
-            llm_service=FailingLLM(),
-            document_service=self.document_service,
-            fallback_policy=ChatFallbackPolicy(),
-            index_ensurer=lambda: None,
-            retriever_provider=lambda: retriever,
-        )
-        self.service = ChatService(
-            workflow_service=WorkflowService(str(self.workflow_db)),
-            llm_service=FailingLLM(),
-            log_service=self.log_service,
-            document_service=self.document_service,
-            rag_service=rag_service,
-        )
+        self.knowledge_index = StaticKnowledgeIndex(retriever)
+        self.log_service = RecordingLogService()
+        self.service = self._build_service(FailingLLM())
 
     def tearDown(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_workflow_request_takes_priority_over_topic_selection(self) -> None:
-        request = ChatRequest(
-            messages=[
-                Message(
-                    role="user",
-                    content="I need vacation from 2030-04-01 to 2030-04-03",
-                )
-            ]
+    def _build_service(self, llm, *, knowledge_index=None) -> ChatService:
+        active_index = knowledge_index or self.knowledge_index
+        rag_service = RAGService(
+            llm_service=llm,
+            fallback_policy=ChatFallbackPolicy(),
+            knowledge_index=active_index,
+        )
+        return ChatService(
+            workflow_service=WorkflowService(str(self.temp_dir / "workflow.db")),
+            llm_service=llm,
+            log_service=self.log_service,
+            rag_service=rag_service,
         )
 
-        with (
-            patch.object(
-                self.service.router,
-                "route",
-                return_value=RoutingDecision(
-                    language="en",
-                    intent=Intent.WORK,
-                    topic_selection="PTO, vacation, and sick leave",
-                    explicit_topic_choice=True,
-                    prior_topic=None,
-                ),
-            ),
-            patch.object(
-                self.service.rag_service,
-                "generate_with_fallback",
-                return_value="guided response",
-            ) as generate_with_fallback,
-        ):
-            response = self.service.handle_chat(request, created_by="demo-user")
+    @staticmethod
+    def _query(content: str, *earlier: ChatTurn) -> ChatQuery:
+        return ChatQuery(messages=[*earlier, ChatTurn(role="user", content=content)])
 
-        self.assertEqual(response.intent, "work")
-        self.assertIn("I prepared request draft", response.message.content)
-        self.assertIsNotNone(response.workflow_request)
-        assert response.workflow_request is not None
-        self.assertEqual(response.workflow_request.status, "draft")
-        generate_with_fallback.assert_not_called()
+    def test_workflow_request_takes_priority_over_topic_selection(self) -> None:
+        query = self._query("I need vacation from 2030-04-01 to 2030-04-03")
+
+        with patch.object(
+            self.service.router,
+            "route",
+            return_value=RoutingDecision(
+                language="en",
+                intent=Intent.WORK,
+                topic_selection="PTO, vacation, and sick leave",
+                explicit_topic_choice=True,
+                prior_topic=None,
+            ),
+        ):
+            outcome = self.service.respond(query, created_by="demo-user")
+
+        self.assertEqual(outcome.intent, Intent.WORK)
+        self.assertIn("I prepared request draft", outcome.content)
+        self.assertIsNotNone(outcome.workflow_request)
+        assert outcome.workflow_request is not None
+        self.assertEqual(outcome.workflow_request["status"], "draft")
+        self.assertEqual(outcome.outcome_code, "workflow")
 
     def test_policy_question_does_not_create_workflow_draft(self) -> None:
-        request = ChatRequest(messages=[Message(role="user", content="How do I request vacation?")])
+        outcome = self.service.respond(
+            self._query("How do I request vacation?"),
+            created_by="demo-user",
+        )
 
-        response = self.service.handle_chat(request, created_by="demo-user")
-
-        self.assertIsNone(response.workflow_request)
+        self.assertIsNone(outcome.workflow_request)
         self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
 
-    def test_hr_support_shortcut_returns_fixed_handoff(self) -> None:
-        request = ChatRequest(messages=[Message(role="user", content="I need help from HR")])
+    def test_abandoned_workflow_stream_discards_its_private_draft(self) -> None:
+        updates = self.service.stream(
+            self._query("I need vacation from 2030-04-01 to 2030-04-03"),
+            created_by="demo-user",
+        )
 
-        with patch.object(self.service.rag_service, "answer_with_retrieval") as retrieve:
-            response = self.service.handle_chat(request, created_by="demo-user")
+        first = next(updates)
+        self.assertEqual(first.kind, "token")
+        self.assertEqual(len(self.service.workflow_service.list_for_user("demo-user")), 1)
 
-        self.assertEqual(response.intent, "work")
+        updates.close()
+
+        self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
+
+    def test_completed_workflow_stream_keeps_its_draft(self) -> None:
+        updates = list(
+            self.service.stream(
+                self._query("I need vacation from 2030-04-01 to 2030-04-03"),
+                created_by="demo-user",
+            )
+        )
+
+        self.assertEqual(updates[-1].kind, "complete")
+        self.assertEqual(len(self.service.workflow_service.list_for_user("demo-user")), 1)
+
+    def test_hr_support_shortcut_returns_fixed_demo_handoff(self) -> None:
+        outcome = self.service.respond(
+            self._query("I need help from HR"),
+            created_by="demo-user",
+        )
+
+        self.assertEqual(outcome.intent, Intent.WORK)
         self.assertEqual(
-            response.message.content,
+            outcome.content,
             "I’ve opened a private HR support request for you. An HR partner will review it "
             "and follow up here. You can add any helpful context in this conversation.",
         )
-        self.assertEqual(response.sources, [])
-        self.assertIsNone(response.workflow_request)
-        retrieve.assert_not_called()
+        self.assertEqual(outcome.sources, [])
+        self.assertIsNone(outcome.workflow_request)
+        self.assertEqual(outcome.outcome_code, "handoff_demo")
 
     def test_explicit_topic_selection_returns_guided_response(self) -> None:
-        request = ChatRequest(messages=[Message(role="user", content="2")])
+        outcome = self.service.respond(self._query("2"), created_by="demo-user")
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        self.assertEqual(outcome.intent, Intent.WORK)
+        self.assertIn("You selected Salary and payroll.", outcome.content)
+        self.assertIn("How often are salaries paid?", outcome.content)
+        self.assertNotIn("Salaries are paid twice per month.", outcome.content)
 
-        self.assertEqual(response.intent, "work")
-        self.assertIn("You selected Salary and payroll.", response.message.content)
-        self.assertIn("How often are salaries paid?", response.message.content)
-        self.assertNotIn("Salaries are paid twice per month.", response.message.content)
-
-    def test_follow_up_question_uses_prior_selected_topic(self) -> None:
-        request = ChatRequest(
-            messages=[
-                Message(role="user", content="2"),
-                Message(role="assistant", content=self.GUIDED_SALARY_REPLY),
-                Message(role="user", content="How often are they paid?"),
-            ]
+    def test_follow_up_question_uses_prior_selected_topic_and_history(self) -> None:
+        query = self._query(
+            "How often are they paid?",
+            ChatTurn(role="user", content="2"),
+            ChatTurn(role="assistant", content=self.GUIDED_SALARY_REPLY),
         )
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        outcome = self.service.respond(query, created_by="demo-user")
 
-        self.assertEqual(response.intent, "work")
-        self.assertIn("Salaries are paid twice per month.", response.message.content)
+        self.assertEqual(outcome.intent, Intent.WORK)
+        self.assertIn("Salaries are paid twice per month.", outcome.content)
+        self.assertEqual(outcome.outcome_code, "grounded")
 
-    def test_ambiguous_follow_up_does_not_dump_full_document(self) -> None:
-        request = ChatRequest(
-            messages=[
-                Message(role="user", content="2"),
-                Message(role="assistant", content=self.GUIDED_SALARY_REPLY),
-                Message(role="user", content="Can you explain?"),
-            ]
+    def test_ambiguous_follow_up_asks_for_a_specific_question(self) -> None:
+        query = self._query(
+            "Can you explain?",
+            ChatTurn(role="user", content="2"),
+            ChatTurn(role="assistant", content=self.GUIDED_SALARY_REPLY),
         )
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        outcome = self.service.respond(query, created_by="demo-user")
 
-        self.assertEqual(response.intent, "work")
         self.assertIn(
             "I can help with Salary and payroll, but I need a more specific question.",
-            response.message.content,
+            outcome.content,
         )
-        self.assertNotIn("Payroll is processed on the 15th and last day.", response.message.content)
+        self.assertNotIn("Payroll is processed on the 15th", outcome.content)
 
-    def test_irrelevant_invalid_message_does_not_reuse_prior_topic(self) -> None:
-        request = ChatRequest(
-            messages=[
-                Message(role="user", content="2"),
-                Message(role="assistant", content=self.GUIDED_SALARY_REPLY),
-                Message(role="user", content="Tell me a joke"),
-            ]
+    def test_irrelevant_invalid_message_does_not_reuse_prior_topic_or_log(self) -> None:
+        query = self._query(
+            "Tell me a joke",
+            ChatTurn(role="user", content="2"),
+            ChatTurn(role="assistant", content=self.GUIDED_SALARY_REPLY),
         )
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        outcome = self.service.respond(query, created_by="demo-user")
 
-        self.assertEqual(response.intent, "invalid")
-        self.assertIn("I can assist only with supported workplace topics", response.message.content)
-        self.assertNotIn("Salaries are paid", response.message.content)
+        self.assertEqual(outcome.intent, Intent.INVALID)
+        self.assertIn("I can assist only with supported workplace topics", outcome.content)
+        self.assertNotIn("Salaries are paid", outcome.content)
         self.assertEqual(self.log_service.entries, [])
 
     def test_preview_mode_creates_no_request_and_writes_no_log(self) -> None:
-        request = ChatRequest(
-            messages=[
-                Message(
-                    role="user",
-                    content="I need vacation from 2030-04-01 to 2030-04-03",
-                )
-            ]
-        )
-
-        response = self.service.handle_chat(
-            request,
+        outcome = self.service.respond(
+            self._query("I need vacation from 2030-04-01 to 2030-04-03"),
             created_by="knowledge-admin",
             log_outcome=False,
             allow_workflow=False,
         )
 
-        self.assertIsNone(response.workflow_request)
-        self.assertEqual(self.service.workflow_service.list_for_user("knowledge-admin"), [])
+        self.assertIsNone(outcome.workflow_request)
+        self.assertEqual(
+            self.service.workflow_service.list_for_user("knowledge-admin"),
+            [],
+        )
         self.assertEqual(self.log_service.entries, [])
 
-    def test_rag_bootstrap_failure_returns_service_fallback(self) -> None:
-        request = ChatRequest(
-            messages=[Message(role="user", content="How often are salaries paid?")]
+    def test_index_bootstrap_failure_returns_service_fallback(self) -> None:
+        service = self._build_service(
+            FailingLLM(),
+            knowledge_index=FailingKnowledgeIndex(self.knowledge_index.retriever),
         )
 
-        original_ensurer = self.service.rag_service.index_ensurer
-        self.service.rag_service.index_ensurer = Mock(side_effect=RuntimeError("boom"))
-        try:
-            response = self.service.handle_chat(request, created_by="demo-user")
-        finally:
-            self.service.rag_service.index_ensurer = original_ensurer
+        outcome = service.respond(
+            self._query("How often are salaries paid?"),
+            created_by="demo-user",
+        )
 
-        self.assertEqual(response.intent, "work")
-        self.assertIn("The assistant service is temporarily unavailable.", response.message.content)
-        self.assertEqual(response.sources, [])
+        self.assertEqual(outcome.intent, Intent.WORK)
+        self.assertIn("The assistant service is temporarily unavailable.", outcome.content)
+        self.assertEqual(outcome.sources, [])
+        self.assertEqual(outcome.outcome_code, "unavailable")
+
+    def test_stream_for_rag_answer_forwards_real_model_deltas(self) -> None:
+        service = self._build_service(StreamingLLM())
+
+        updates = list(
+            service.stream(
+                self._query("How often are salaries paid?"),
+                created_by="demo-user",
+            )
+        )
+
+        self.assertEqual(
+            [update.content for update in updates if update.kind == "token"],
+            ["Grounded ", "answer"],
+        )
+        self.assertEqual(updates[-1].kind, "complete")
+        assert updates[-1].outcome is not None
+        self.assertEqual(updates[-1].outcome.content, "Grounded answer")
+
+    def test_partial_stream_failure_replaces_incomplete_model_text(self) -> None:
+        service = self._build_service(PartialFailingLLM())
+
+        updates = list(
+            service.stream(
+                self._query("How often are salaries paid?"),
+                created_by="demo-user",
+            )
+        )
+
+        self.assertEqual(updates[0].content, "Incomplete")
+        self.assertEqual(updates[1].kind, "replace")
+        self.assertIn("Salaries are paid twice per month.", updates[1].content)
+        assert updates[-1].outcome is not None
+        self.assertEqual(updates[-1].outcome.content, updates[1].content)
+
+    def test_empty_model_stream_uses_grounded_fallback(self) -> None:
+        service = self._build_service(EmptyStreamingLLM())
+
+        updates = list(
+            service.stream(
+                self._query("How often are salaries paid?"),
+                created_by="demo-user",
+            )
+        )
+
+        self.assertEqual(updates[0].kind, "token")
+        self.assertIn("Salaries are paid twice per month.", updates[0].content)
+        assert updates[-1].outcome is not None
+        self.assertEqual(updates[-1].outcome.content, updates[0].content)
 
 
 if __name__ == "__main__":

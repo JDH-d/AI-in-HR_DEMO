@@ -32,15 +32,11 @@ export function todayIso(now = new Date()): string {
 export function getSickLeaveDetails(request: WorkflowRequest): SickLeaveDetails {
   const details = request.details ?? {};
   const expectedReturnUnknown = details.expected_return_unknown === true;
-  const explicitReturn = typeof details.expected_return_date === "string"
-    ? details.expected_return_date
-    : null;
-  const inferredReturn = !expectedReturnUnknown && request.end_date
-    ? addIsoDays(request.end_date, 1)
-    : null;
-  const partialHours = typeof details.partial_hours === "number"
-    ? details.partial_hours
-    : null;
+  const explicitReturn =
+    typeof details.expected_return_date === "string" ? details.expected_return_date : null;
+  const inferredReturn =
+    !expectedReturnUnknown && request.end_date ? addIsoDays(request.end_date, 1) : null;
+  const partialHours = typeof details.partial_hours === "number" ? details.partial_hours : null;
 
   return {
     expectedReturnDate: explicitReturn || inferredReturn,

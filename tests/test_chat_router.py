@@ -1,15 +1,13 @@
 import unittest
-from pathlib import Path
 
 from rag.nlp import Intent
 from services.chat_models import ChatQuery, ChatTurn
 from services.chat_router import ChatRouter
-from services.document_service import DocumentService
 
 
 class ChatRouterTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.router = ChatRouter(DocumentService(Path.cwd() / "documents"))
+        self.router = ChatRouter()
 
     @staticmethod
     def _guided_salary_reply() -> str:

@@ -24,8 +24,8 @@ Use this document as the primary written guidance for benefits enrollment guide.
 read it for baseline expectations, while managers and support functions should use it as the shared
 reference point before creating one-off exceptions.
 
-When a situation touches other company processes, reviewers should also consult Benefits.docx,
-Payroll_FAQ.md, PTO_Policy.md so decisions stay aligned across payroll, scheduling, access,
+When a situation touches other company processes, reviewers should also consult Payroll_FAQ.md and
+PTO_Policy.md so decisions stay aligned across payroll, scheduling, access,
 onboarding, or benefits workflows.
 
 ## Roles and Responsibilities

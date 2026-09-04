@@ -24,8 +24,8 @@ Use this document as the primary written guidance for it support and access guid
 read it for baseline expectations, while managers and support functions should use it as the shared
 reference point before creating one-off exceptions.
 
-When a situation touches other company processes, reviewers should also consult IT_Support.txt,
-Access_Policy.md, IT_Onboarding_Guide.md so decisions stay aligned across payroll, scheduling,
+When a situation touches other company processes, reviewers should also consult Access_Policy.md and
+IT_Onboarding_Guide.md so decisions stay aligned across payroll, scheduling,
 access, onboarding, or benefits workflows.
 
 ## Roles and Responsibilities

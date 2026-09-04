@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
-import { statusTone } from "../components/ui";
 import type { RequestDetail, WorkflowRequest } from "../api/types";
+import { statusTone } from "../components/ui";
 import { decisionComment, RequestOverview } from "../features/requests/RequestDetails";
 import { expectedReturnLabel, requestPeriodLabel } from "../features/requests/requestPresentation";
 import { App } from "./App";
@@ -14,7 +14,9 @@ describe("PeopleFlow application shell", () => {
   it("shows all three predefined role workspaces", async () => {
     render(
       <MemoryRouter initialEntries={["/login"]}>
-        <AppProviders><App /></AppProviders>
+        <AppProviders>
+          <App />
+        </AppProviders>
       </MemoryRouter>,
     );
     expect(await screen.findByText("Work questions become")).toBeInTheDocument();
@@ -102,15 +104,17 @@ describe("PeopleFlow application shell", () => {
         updated_at: "2030-01-01T10:00:00Z",
       },
       comments: [],
-      events: [{
-        id: "event-1",
-        event_type: "status_changed",
-        from_status: "in_review",
-        to_status: "declined",
-        actor: "manager.demo",
-        details: { comment: "Coverage is unavailable." },
-        created_at: "2030-01-01T10:00:00Z",
-      }],
+      events: [
+        {
+          id: "event-1",
+          event_type: "status_changed",
+          from_status: "in_review",
+          to_status: "declined",
+          actor: "manager.demo",
+          details: { comment: "Coverage is unavailable." },
+          created_at: "2030-01-01T10:00:00Z",
+        },
+      ],
     } satisfies RequestDetail;
 
     expect(decisionComment(detail)).toBe("Coverage is unavailable.");

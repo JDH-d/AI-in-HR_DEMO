@@ -24,12 +24,21 @@ class Retriever:
         self,
         items: list[dict[str, Any]],
         client_factory: Callable[[], OpenAI] | None = None,
+        embedding_model: str = settings.EMBEDDING_MODEL,
     ) -> None:
         self.items = items
         self.client_factory = client_factory or create_openai_client
+        self.embedding_model = embedding_model
+        self._client: OpenAI | None = None
 
     @classmethod
-    def load(cls, path: str) -> "Retriever":
+    def load(
+        cls,
+        path: str,
+        *,
+        client_factory: Callable[[], OpenAI] | None = None,
+        embedding_model: str = settings.EMBEDDING_MODEL,
+    ) -> "Retriever":
         try:
             with open(path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
@@ -38,7 +47,11 @@ class Retriever:
 
         if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
             raise RetrieverError("Retrieval index has an unsupported schema")
-        return cls(payload["items"])
+        return cls(
+            payload["items"],
+            client_factory=client_factory,
+            embedding_model=embedding_model,
+        )
 
     def query(
         self,
@@ -94,18 +107,23 @@ class Retriever:
         if not any(item.get("embedding") for item in self.items):
             return None
         try:
-            response = self.client_factory().embeddings.create(
-                model=settings.EMBEDDING_MODEL,
+            response = self._get_client().embeddings.create(
+                model=self.embedding_model,
                 input=[text],
             )
             return response.data[0].embedding
         except (IndexError, OpenAIError, OSError, TypeError, ValueError) as exc:
             logger.warning(
                 "Query embedding failed model=%s error=%s; using lexical retrieval",
-                settings.EMBEDDING_MODEL,
+                self.embedding_model,
                 type(exc).__name__,
             )
             return None
+
+    def _get_client(self) -> OpenAI:
+        if self._client is None:
+            self._client = self.client_factory()
+        return self._client
 
 
 def build_relevant_excerpt(text: str, query: str, max_chars: int = 360) -> str:

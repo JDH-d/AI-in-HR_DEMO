@@ -1,32 +1,54 @@
-﻿# Demo Scenarios
+# PeopleFlow AI demo scenarios
 
-## Employee Flow
-1. Sign in as `employee` with the configured demo password.
-2. Ask: `What can you help with?`
-3. Select: `1` or `PTO`
-4. Ask: `How far in advance should I request vacation?`
-5. Ask: `Can I request partial-day PTO?`
-6. Prepare a request: `I need vacation from 2030-04-10 to 2030-04-12`
-7. Prepare a sick leave report: `I need sick leave tomorrow`
-8. Review the extracted fields and submit or report the draft.
-9. Open **My Requests** and show the status history.
+Use the default password `demo-password` unless the local environment overrides it.
 
-## Manager Flow
-1. Ask: `How do schedule changes work?`
-2. Ask: `Do overtime hours require approval?`
-3. Ask: `How should sick leave be reported?`
-4. Use the response to explain manager review expectations and policy-backed answers.
+## 1. Grounded employee conversation
 
-## Admin Flow
-1. Open the React application and choose an administration role.
-2. Sign in as `manager`, load requests, approve or decline PTO, and acknowledge sick leave.
-3. Add a manager comment and show the event history.
-4. Sign out and sign in as `knowledge_admin`.
-5. Refresh metrics and the document list.
-6. Index one document and inspect masked logs.
+1. Sign in as `employee`.
+2. Ask `When is payroll processed?`.
+3. Open Sources and show the exact handbook evidence.
+4. Ask the contextual follow-up `What if that date is a holiday?`.
+5. Click the PeopleFlow logo. Point out that a fresh chat opens without adding an empty history item.
+6. Reopen the payroll conversation from Recent conversations and show that both exchanges return.
 
-## Suggested Narrative
-- Start with employee self-service.
-- Show policy-grounded answers rather than generic LLM output.
-- Transition into draft preparation and explicit confirmation.
-- End with protected manager transitions and auditability.
+## 2. PTO approval
+
+1. In Employee Workspace, ask `I need vacation from 2030-04-10 to 2030-04-12` or click New request.
+2. Review the dates, quick-length controls, planning note, and summary.
+3. Send the request and show the short confirmation animation.
+4. Sign in as `manager` and open the request marked In review.
+5. Approve it, or decline it to demonstrate the required decision note.
+6. Return as `employee`; open My requests and show the current status and timeline.
+7. Reopen the original chat and show that its request card also reflects the current status.
+
+## 3. Sick leave report
+
+1. Sign in as `employee` and click New request.
+2. Choose Sick leave.
+3. Set the first day, expected return (or Not sure), and full/partial-day availability.
+4. Optionally add a team note or flag a possible extended/recurring absence.
+5. Submit the report. Explain that this shares availability directly; it is not an approval request.
+6. Sign in as `manager`, open the Reported item, add an optional support note, and acknowledge it.
+7. Show the final Acknowledged status and event timeline.
+
+## 4. Ask HR demo interaction
+
+1. In Employee Workspace, click Ask HR.
+2. Explain that the response is deliberately fixed: the tech demo preserves the intended interaction without claiming to integrate with a real help desk.
+3. Reopen it from conversation history to show that the exchange itself is real and persistent.
+
+## 5. Knowledge operations
+
+1. Sign in as `knowledge_admin`.
+2. In Documents, upload a small `.md` file and show automatic indexing.
+3. Use Rebuild index and point out whether the current mode is embedding or lexical fallback.
+4. In Quality, inspect anonymized helpful/unhelpful feedback and unresolved knowledge gaps.
+5. In AI settings, change an unsaved control, run the side-effect-free preview, then discard or apply it.
+6. Return to Overview and refresh the metrics.
+
+## Suggested narrative
+
+- Start with trustworthy answers and real history.
+- Move from chat into one approval workflow and one reporting workflow.
+- Show that manager actions update the same underlying request everywhere.
+- Finish with operational ownership: source maintenance, quality review, and safe configuration.

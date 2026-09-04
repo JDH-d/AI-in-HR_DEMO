@@ -25,7 +25,7 @@ should read it for baseline expectations, while managers and support functions s
 shared reference point before creating one-off exceptions.
 
 When a situation touches other company processes, reviewers should also consult
-Salary_and_Payroll.txt, Benefits_Enrollment_Guide.md, PTO_Policy.md so decisions stay aligned across
+Benefits_Enrollment_Guide.md and PTO_Policy.md so decisions stay aligned across
 payroll, scheduling, access, onboarding, or benefits workflows.
 
 ## Roles and Responsibilities

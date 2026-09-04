@@ -1,19 +1,29 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from fastapi.testclient import TestClient
 
-from app import app
-from core import settings
+from app import create_app
+from tests.support import TEST_PASSWORD, build_test_services
 
 
 class DemoAuthenticationTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.client = TestClient(app)
+        self.temp_dir = TemporaryDirectory()
+        self.services = build_test_services(Path(self.temp_dir.name))
+        self.app = create_app(lambda: self.services)
+        self.client_context = TestClient(self.app)
+        self.client = self.client_context.__enter__()
+
+    def tearDown(self) -> None:
+        self.client_context.__exit__(None, None, None)
+        self.temp_dir.cleanup()
 
     def test_login_and_me_return_predefined_identity(self) -> None:
         login = self.client.post(
             "/api/v1/auth/login",
-            json={"username": "employee", "password": settings.DEMO_LOGIN_PASSWORD},
+            json={"username": "employee", "password": TEST_PASSWORD},
         )
 
         self.assertEqual(login.status_code, 200)
@@ -73,7 +83,7 @@ class DemoAuthenticationTests(unittest.TestCase):
     def _token(self, username: str) -> str:
         response = self.client.post(
             "/api/v1/auth/login",
-            json={"username": username, "password": settings.DEMO_LOGIN_PASSWORD},
+            json={"username": username, "password": TEST_PASSWORD},
         )
         self.assertEqual(response.status_code, 200)
         return response.json()["access_token"]

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-labelledby="title description">
+  <title id="title">PeopleFlow AI</title>
+  <desc id="description">Grounded people operations, from question to action.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d0f0d" />
+      <stop offset="1" stop-color="#11160f" />
+    </linearGradient>
+    <radialGradient id="limeGlow" cx="0" cy="0" r="1" gradientTransform="translate(1090 22) rotate(118) scale(370 430)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c9f45b" stop-opacity="0.16" />
+      <stop offset="1" stop-color="#c9f45b" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="coralGlow" cx="0" cy="0" r="1" gradientTransform="translate(45 390) rotate(-32) scale(360 250)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ef9a75" stop-opacity="0.11" />
+      <stop offset="1" stop-color="#ef9a75" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#f4f1e8" stroke-opacity="0.025" />
+    </pattern>
+    <clipPath id="frame">
+      <rect width="1280" height="400" rx="28" />
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1280" height="400" fill="url(#background)" />
+    <rect width="1280" height="400" fill="url(#grid)" />
+    <rect width="1280" height="400" fill="url(#limeGlow)" />
+    <rect width="1280" height="400" fill="url(#coralGlow)" />
+    <path d="M0 1H1280" stroke="#c9f45b" stroke-opacity="0.38" stroke-width="2" />
+
+    <g transform="translate(64 62)">
+      <rect width="58" height="58" rx="17" fill="#c9f45b" />
+      <path d="M20 23h18a4 4 0 0 1 4 4v13a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V27a4 4 0 0 1 4-4Z" fill="none" stroke="#0d0f0d" stroke-width="2.6" />
+      <path d="M29 16v7M25 16h8M12 31h4M42 31h4M23 44v4M35 44v4" fill="none" stroke="#0d0f0d" stroke-width="2.6" stroke-linecap="round" />
+      <circle cx="24" cy="33" r="2" fill="#0d0f0d" />
+      <circle cx="34" cy="33" r="2" fill="#0d0f0d" />
+    </g>
+
+    <text x="142" y="83" fill="#c9f45b" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="2.3">LOCAL-FIRST HR OPERATIONS</text>
+    <text x="64" y="183" fill="#f4f1e8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="56" font-weight="720" letter-spacing="-1.8">PeopleFlow AI</text>
+    <text x="64" y="233" fill="#f4f1e8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="25" font-weight="560">Grounded answers. Clear workflows.</text>
+    <text x="64" y="267" fill="#9da397" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">From an employee question to a human decision — in one local demo.</text>
+
+    <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="650">
+      <rect x="64" y="309" width="126" height="38" rx="19" fill="#1b1f1a" stroke="#2d322a" />
+      <circle cx="84" cy="328" r="4" fill="#c9f45b" />
+      <text x="98" y="333" fill="#d7dbd1">RAG answers</text>
+      <rect x="202" y="309" width="156" height="38" rx="19" fill="#1b1f1a" stroke="#2d322a" />
+      <circle cx="222" cy="328" r="4" fill="#ef9a75" />
+      <text x="236" y="333" fill="#d7dbd1">Real chat history</text>
+      <rect x="370" y="309" width="166" height="38" rx="19" fill="#1b1f1a" stroke="#2d322a" />
+      <circle cx="390" cy="328" r="4" fill="#c9f45b" />
+      <text x="404" y="333" fill="#d7dbd1">PTO + Sick leave</text>
+    </g>
+
+    <g>
+      <rect x="720" y="44" width="496" height="312" rx="24" fill="#141714" stroke="#2d322a" />
+      <text x="756" y="80" fill="#9da397" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1.8">ONE CONTINUOUS FLOW</text>
+      <path d="M772 132V290" stroke="#394033" stroke-width="2" />
+
+      <circle cx="772" cy="132" r="9" fill="#2b211d" stroke="#ef9a75" stroke-width="2" />
+      <rect x="800" y="104" width="376" height="58" rx="15" fill="#1b1f1a" stroke="#30362d" />
+      <text x="820" y="128" fill="#ef9a75" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="750" letter-spacing="1.2">ASK</text>
+      <text x="820" y="149" fill="#f4f1e8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="560">When is payroll processed?</text>
+
+      <circle cx="772" cy="211" r="9" fill="#253016" stroke="#c9f45b" stroke-width="2" />
+      <rect x="800" y="182" width="376" height="58" rx="15" fill="#1b1f1a" stroke="#3c492c" />
+      <text x="820" y="206" fill="#c9f45b" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="750" letter-spacing="1.2">GROUND</text>
+      <text x="820" y="227" fill="#f4f1e8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="560">Answer backed by approved sources</text>
+      <rect x="1090" y="196" width="66" height="27" rx="13.5" fill="#253016" />
+      <text x="1105" y="214" fill="#c9f45b" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="10" font-weight="750">4 SOURCES</text>
+
+      <circle cx="772" cy="290" r="9" fill="#253016" stroke="#c9f45b" stroke-width="2" />
+      <rect x="800" y="260" width="376" height="60" rx="15" fill="#1b1f1a" stroke="#30362d" />
+      <text x="820" y="284" fill="#c9f45b" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="11" font-weight="750" letter-spacing="1.2">ACT</text>
+      <text x="820" y="306" fill="#f4f1e8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="560">PTO request</text>
+      <rect x="1064" y="276" width="92" height="28" rx="14" fill="#2b211d" stroke="#62402e" />
+      <text x="1081" y="295" fill="#ef9a75" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="10" font-weight="750" letter-spacing="0.7">IN REVIEW</text>
+    </g>
+  </g>
+</svg>

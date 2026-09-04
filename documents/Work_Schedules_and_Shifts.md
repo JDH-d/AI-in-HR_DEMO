@@ -24,8 +24,8 @@ Use this document as the primary written guidance for work schedules, hybrid wor
 coverage policy. Employees should read it for baseline expectations, while managers and support
 functions should use it as the shared reference point before creating one-off exceptions.
 
-When a situation touches other company processes, reviewers should also consult Work_Schedules.docx,
-PTO_Policy.md, IT_Support_and_Access.md so decisions stay aligned across payroll, scheduling,
+When a situation touches other company processes, reviewers should also consult PTO_Policy.md and
+IT_Support_and_Access.md so decisions stay aligned across payroll, scheduling,
 access, onboarding, or benefits workflows.
 
 ## Roles and Responsibilities

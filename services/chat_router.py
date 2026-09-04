@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from rag.nlp import Intent, detect_intent, detect_language, detect_topic_selection
+from rag.nlp import (
+    Intent,
+    detect_intent,
+    detect_language,
+    detect_topic_selection,
+    is_explicit_topic_choice,
+)
 
 from .chat_models import ChatQuery, RoutingDecision
-from .document_service import DocumentService
 
 
 class ChatRouter:
-    def __init__(self, document_service: DocumentService) -> None:
-        self.document_service = document_service
-
     def route(self, query: ChatQuery) -> RoutingDecision:
         latest_user = query.latest_user_message
         first_user = query.first_user_message
@@ -27,9 +29,13 @@ class ChatRouter:
         intent = detect_intent(latest_user.content)
         explicit_topic_choice = self._is_explicit_topic_choice(latest_user.content)
         prior_topic = self.find_prior_topic(query)
+        previous_user = query.previous_user_message
+        previous_was_work = bool(
+            previous_user and detect_intent(previous_user.content) == Intent.WORK
+        )
 
-        if intent == Intent.INVALID and not topic_selection and prior_topic:
-            if self._should_use_prior_topic(latest_user.content):
+        if intent == Intent.INVALID and not topic_selection and (prior_topic or previous_was_work):
+            if self._should_continue_conversation(latest_user.content):
                 intent = Intent.WORK
 
         return RoutingDecision(
@@ -51,12 +57,10 @@ class ChatRouter:
         return None
 
     def _is_explicit_topic_choice(self, text: str) -> bool:
-        return self.document_service.is_numeric_topic_choice(
-            text
-        ) or self.document_service.is_exact_topic_text(text)
+        return is_explicit_topic_choice(text)
 
     @staticmethod
-    def _should_use_prior_topic(text: str) -> bool:
+    def _should_continue_conversation(text: str) -> bool:
         lowered = (text or "").strip().lower()
         if not lowered:
             return False
@@ -85,6 +89,8 @@ class ChatRouter:
                     "any ",
                     "and ",
                     "also ",
+                    "tell me more",
+                    "explain ",
                 )
             )
             or "?" in lowered

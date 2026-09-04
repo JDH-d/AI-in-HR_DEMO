@@ -3,6 +3,7 @@ import sqlite3
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from workflow import (
     InvalidTransitionError,
@@ -10,6 +11,7 @@ from workflow import (
     WorkflowService,
     WorkflowValidationError,
 )
+from workflow_schema import SCHEMA_VERSION
 
 
 class WorkflowServiceTests(unittest.TestCase):
@@ -40,7 +42,7 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(result["duration_days"], 3)
         self.assertEqual(result["status"], "draft")
         self.assertEqual(result["applicant"], "demo-user")
-        self.assertEqual(result["approver"], "Manager")
+        self.assertEqual(result["approver"], "manager.demo")
         self.assertEqual(result["validation_errors"], [])
 
     def test_confirmation_validates_and_sends_draft_for_review(self) -> None:
@@ -49,11 +51,12 @@ class WorkflowServiceTests(unittest.TestCase):
         in_review = self.service.confirm_draft(
             draft["id"],
             "demo-user",
-            {"comment": "Family vacation"},
+            {"comment": "Family vacation", "approver": "forged.manager"},
         )
 
         self.assertEqual(in_review["status"], "in_review")
         self.assertEqual(in_review["duration_days"], 3)
+        self.assertEqual(in_review["approver"], "manager.demo")
         history = self.service.history(draft["id"])
         self.assertEqual(
             [event["to_status"] for event in history["events"]],
@@ -97,6 +100,16 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(draft["comment"], "")
         self.assertEqual(draft["details"]["expected_return_date"], "2030-04-03")
 
+    def test_slash_dates_use_us_month_day_order(self) -> None:
+        draft = self.service.prepare_draft(
+            "I need vacation from 04/10/2030 to 04/12/2030",
+            applicant="demo-user",
+        )
+
+        assert draft is not None
+        self.assertEqual(draft["start_date"], "2030-04-10")
+        self.assertEqual(draft["end_date"], "2030-04-12")
+
     def test_sick_leave_is_reported_without_a_medical_note_or_approval(self) -> None:
         draft = self.service.create_structured_draft(
             request_type="sick_leave",
@@ -115,10 +128,10 @@ class WorkflowServiceTests(unittest.TestCase):
         )
 
         reported = self.service.confirm_draft(draft["id"], "demo-user", {})
-        acknowledged = self.service.transition(
+        acknowledged = self.service.manager_decision(
             reported["id"],
+            "manager.demo",
             "acknowledged",
-            actor="manager.demo",
         )
 
         self.assertEqual(reported["status"], "reported")
@@ -189,9 +202,7 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(self.service.list_for_user("demo-user"), [])
 
     def test_document_language_does_not_create_a_workflow(self) -> None:
-        self.assertIsNone(
-            self.service.prepare_draft("I need an employment letter", "demo-user")
-        )
+        self.assertIsNone(self.service.prepare_draft("I need an employment letter", "demo-user"))
         with self.assertRaises(WorkflowValidationError):
             self.service.create_structured_draft(
                 request_type="document",
@@ -202,16 +213,41 @@ class WorkflowServiceTests(unittest.TestCase):
                 approver="manager.demo",
             )
 
+    def test_removed_request_type_is_hidden_from_manager_detail_and_list(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO workflow_requests
+                (id, type, start_date, end_date, duration_days, comment, applicant, approver,
+                 details, status, created_at, updated_at)
+                VALUES ('old-document-request', 'document_request', NULL, NULL, NULL,
+                        'Legacy letter', 'demo-user', 'manager.demo', '{}', 'in_review',
+                        '2030-04-01T09:00:00+00:00', '2030-04-01T09:00:00+00:00')
+                """
+            )
+            conn.commit()
+
+        self.assertIsNone(self.service.get_for_manager("old-document-request", "manager.demo"))
+        self.assertEqual(self.service.list_for_manager("manager.demo"), [])
+
     def test_state_machine_blocks_invalid_transition(self) -> None:
         draft = self._draft()
         in_review = self.service.confirm_draft(draft["id"], "demo-user", {})
 
         with self.assertRaises(WorkflowValidationError):
-            self.service.transition(in_review["id"], "completed")
+            self.service.store.transition(in_review["id"], "completed", "manager.demo")
 
-        approved = self.service.transition(in_review["id"], "approved")
+        approved = self.service.manager_decision(
+            in_review["id"],
+            "manager.demo",
+            "approved",
+        )
         with self.assertRaises(InvalidTransitionError):
-            self.service.transition(approved["id"], "in_review")
+            self.service.manager_decision(
+                approved["id"],
+                "manager.demo",
+                "approved",
+            )
 
     def test_applicant_can_cancel_and_event_is_recorded(self) -> None:
         draft = self._draft()
@@ -226,7 +262,12 @@ class WorkflowServiceTests(unittest.TestCase):
 
     def test_manager_comment_and_feedback_create_events(self) -> None:
         draft = self._draft()
-        self.service.add_manager_comment(draft["id"], "manager-1", "Please add context.")
+        self.service.confirm_draft(draft["id"], "demo-user", {})
+        self.service.add_manager_comment(
+            draft["id"],
+            "manager.demo",
+            "Please add context.",
+        )
         feedback = self.service.add_feedback(draft["id"], "demo-user", 5, "Clear flow")
 
         history = self.service.history(draft["id"])
@@ -234,7 +275,7 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(feedback["rating"], 5)
         self.assertEqual(
             [event["event_type"] for event in history["events"]],
-            ["draft_created", "comment_added", "feedback_added"],
+            ["draft_created", "status_changed", "comment_added", "feedback_added"],
         )
 
     def test_schema_contains_all_stage_two_entities(self) -> None:
@@ -251,7 +292,6 @@ class WorkflowServiceTests(unittest.TestCase):
 
         self.assertTrue(
             {
-                "users",
                 "workflow_requests",
                 "request_events",
                 "request_comments",
@@ -259,6 +299,7 @@ class WorkflowServiceTests(unittest.TestCase):
                 "quality_reviews",
             }.issubset(tables)
         )
+        self.assertNotIn("users", tables)
         self.assertIn("answer", feedback_columns)
 
     def test_quality_review_actions_are_persisted_and_replaceable(self) -> None:
@@ -309,6 +350,162 @@ class WorkflowServiceTests(unittest.TestCase):
             migrated.history("legacy-1")["events"][0]["event_type"],
             "legacy_request_migrated",
         )
+        with sqlite3.connect(legacy_path) as conn:
+            legacy_tables = conn.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name LIKE 'workflow_requests_legacy_%'
+                """
+            ).fetchall()
+            request_index = conn.execute(
+                """
+                SELECT tbl_name FROM sqlite_master
+                WHERE type = 'index' AND name = 'idx_requests_applicant'
+                """
+            ).fetchone()
+
+        self.assertEqual(legacy_tables, [])
+        self.assertEqual(request_index, ("workflow_requests",))
+
+    def test_legacy_migration_preserves_related_rows_and_foreign_keys(self) -> None:
+        legacy_path = self.temp_dir / "legacy-with-history.db"
+        with sqlite3.connect(legacy_path) as conn:
+            conn.executescript(
+                """
+                PRAGMA foreign_keys = ON;
+                CREATE TABLE workflow_requests (
+                    id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    period_or_date TEXT NOT NULL,
+                    comment TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    assigned_to TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE request_events (
+                    id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    from_status TEXT,
+                    to_status TEXT,
+                    actor TEXT NOT NULL,
+                    details TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (request_id) REFERENCES workflow_requests(id) ON DELETE CASCADE
+                );
+                CREATE TABLE request_comments (
+                    id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (request_id) REFERENCES workflow_requests(id) ON DELETE CASCADE
+                );
+                CREATE TABLE feedback (
+                    id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    rating INTEGER NOT NULL,
+                    comment TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (request_id) REFERENCES workflow_requests(id) ON DELETE CASCADE
+                );
+                INSERT INTO workflow_requests VALUES
+                    ('legacy-1', 'PTO', 'demo-user', 'tomorrow', 'Legacy request',
+                     'pending', 'Manager', '2026-01-01T00:00:00+00:00');
+                INSERT INTO request_events VALUES
+                    ('event-1', 'legacy-1', 'comment_added', 'pending', 'pending',
+                     'manager.demo', '{}', '2026-01-01T01:00:00+00:00');
+                INSERT INTO request_comments VALUES
+                    ('comment-1', 'legacy-1', 'manager.demo', 'Existing note',
+                     '2026-01-01T01:00:00+00:00');
+                INSERT INTO feedback VALUES
+                    ('feedback-1', 'legacy-1', 'demo-user', 5, 'Useful',
+                     '2026-01-01T02:00:00+00:00');
+                """
+            )
+
+        migrated = WorkflowService(str(legacy_path))
+        history = migrated.history("legacy-1")
+
+        self.assertEqual(len(history["events"]), 2)
+        self.assertIn("event-1", {event["id"] for event in history["events"]})
+        self.assertIn(
+            "legacy_request_migrated",
+            {event["event_type"] for event in history["events"]},
+        )
+        self.assertEqual(history["comments"][0]["body"], "Existing note")
+        self.assertEqual(migrated.metrics()["feedback"], 1)
+        with sqlite3.connect(legacy_path) as conn:
+            event_parent = conn.execute("PRAGMA foreign_key_list(request_events)").fetchone()[2]
+            violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+
+        self.assertEqual(event_parent, "workflow_requests")
+        self.assertEqual(violations, [])
+
+    def test_failed_legacy_migration_rolls_back_the_schema_rename(self) -> None:
+        legacy_path = self.temp_dir / "failed-legacy.db"
+        with sqlite3.connect(legacy_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE workflow_requests (
+                    id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    period_or_date TEXT NOT NULL,
+                    comment TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    assigned_to TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO workflow_requests
+                VALUES ('legacy-1', 'PTO', 'demo-user', 'tomorrow', 'Legacy request',
+                        'pending', 'Manager', '2026-01-01T00:00:00+00:00')
+                """
+            )
+            conn.commit()
+
+        with patch(
+            "workflow_schema._migrate_legacy_rows",
+            side_effect=RuntimeError("migration interrupted"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "migration interrupted"):
+                WorkflowService(str(legacy_path))
+
+        with sqlite3.connect(legacy_path) as conn:
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(workflow_requests)").fetchall()
+            }
+            legacy_tables = conn.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name LIKE 'workflow_requests_legacy_%'
+                """
+            ).fetchall()
+            request_ids = conn.execute("SELECT id FROM workflow_requests").fetchall()
+
+        self.assertIn("period_or_date", columns)
+        self.assertNotIn("start_date", columns)
+        self.assertEqual(legacy_tables, [])
+        self.assertEqual(request_ids, [("legacy-1",)])
+
+    def test_newer_database_schema_is_not_silently_downgraded(self) -> None:
+        future_version = SCHEMA_VERSION + 1
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(f"PRAGMA user_version = {future_version}")
+            conn.commit()
+
+        with self.assertRaisesRegex(RuntimeError, "newer than supported"):
+            WorkflowService(str(self.db_path))
+
+        with sqlite3.connect(self.db_path) as conn:
+            current_version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(current_version, future_version)
 
     def test_submitted_status_from_v2_is_migrated_to_in_review(self) -> None:
         draft = self._draft()
@@ -375,7 +572,7 @@ class WorkflowServiceTests(unittest.TestCase):
     def test_completed_status_from_v3_is_migrated_to_approved(self) -> None:
         draft = self._draft()
         request = self.service.confirm_draft(draft["id"], "demo-user", {})
-        self.service.transition(request["id"], "approved", actor="manager.demo")
+        self.service.manager_decision(request["id"], "manager.demo", "approved")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE workflow_requests SET status = 'completed' WHERE id = ?",

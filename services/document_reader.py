@@ -24,7 +24,17 @@ class DocumentRecord(TypedDict):
     content_hash: str
 
 
-def read_document(path: Path) -> str:
+class DocumentReadError(RuntimeError):
+    def __init__(self, path: Path, reason: str) -> None:
+        self.path = path
+        super().__init__(f"Unable to read {path.name}: {reason}")
+
+
+def document_id_for_source(source: str) -> str:
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+
+
+def read_document(path: Path, *, strict: bool = False) -> str:
     ext = path.suffix.lower()
     try:
         if ext in {".txt", ".md"}:
@@ -33,23 +43,22 @@ def read_document(path: Path) -> str:
             try:
                 from docx import Document
             except ImportError:
-                logger.warning(
-                    "Skipping DOCX document because python-docx is not installed: %s", path
+                return _unreadable(
+                    path,
+                    "python-docx is not installed",
+                    strict=strict,
                 )
-                return ""
             doc = Document(str(path))
             return "\n".join(p.text for p in doc.paragraphs if p.text)
         if ext == ".pdf":
             try:
                 from pypdf import PdfReader
             except ImportError:
-                logger.warning("Skipping PDF document because pypdf is not installed: %s", path)
-                return ""
+                return _unreadable(path, "pypdf is not installed", strict=strict)
             reader = PdfReader(str(path))
             return "\n".join(page.extract_text() or "" for page in reader.pages)
-    except (OSError, ValueError) as exc:
-        logger.warning("Skipping unreadable document %s: %s", path, exc)
-        return ""
+    except Exception as exc:
+        return _unreadable(path, f"{type(exc).__name__}: {exc}", strict=strict)
     return ""
 
 
@@ -78,7 +87,7 @@ def load_document_catalog(folder: Path) -> dict[str, dict[str, str]]:
     }
 
 
-def load_documents(folder: Path) -> list[DocumentRecord]:
+def load_documents(folder: Path, *, strict: bool = False) -> list[DocumentRecord]:
     if not folder.is_dir():
         return []
 
@@ -88,8 +97,10 @@ def load_documents(folder: Path) -> list[DocumentRecord]:
     for path in sorted(folder.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in SUPPORTED_DOC_EXTENSIONS:
             continue
-        text = read_document(path).strip()
+        text = read_document(path, strict=strict).strip()
         if not text:
+            if strict:
+                raise DocumentReadError(path, "the document contains no readable text")
             continue
 
         source = path.relative_to(folder).as_posix()
@@ -108,7 +119,7 @@ def load_documents(folder: Path) -> list[DocumentRecord]:
         docs.append(
             {
                 "source": source,
-                "document_id": Path(source).stem.lower().replace("_", "-"),
+                "document_id": document_id_for_source(source),
                 "title": metadata.get("title") or _extract_title(text, Path(source).stem),
                 "category": metadata.get("category") or "General",
                 "version": metadata.get("version") or "unversioned",
@@ -117,6 +128,14 @@ def load_documents(folder: Path) -> list[DocumentRecord]:
             }
         )
     return docs
+
+
+def _unreadable(path: Path, reason: str, *, strict: bool) -> str:
+    error = DocumentReadError(path, reason)
+    if strict:
+        raise error
+    logger.warning("Skipping unreadable document %s: %s", path, reason)
+    return ""
 
 
 def _extract_title(text: str, fallback: str) -> str:
