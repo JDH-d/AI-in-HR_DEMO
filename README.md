@@ -1,376 +1,271 @@
-# AI HR Knowledge Assistant (MVP)
+<p align="center">
+  <img src="docs/assets/peopleflow-readme-hero.svg" alt="PeopleFlow AI — grounded people operations, from question to action" width="100%" />
+</p>
 
-![Python Version](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi)
-![React](https://img.shields.io/badge/React-TypeScript-202020?style=for-the-badge&logo=react)
-![OpenAI API](https://img.shields.io/badge/OpenAI-API-orange?style=for-the-badge&logo=openai)
-![Status](https://img.shields.io/badge/Status-MVP-yellow?style=for-the-badge)
+<p align="center">
+  <a href="https://github.com/JDH-d/AI-in-HR_DEMO/actions/workflows/ci.yml"><img src="https://github.com/JDH-d/AI-in-HR_DEMO/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/Python-3.10%2B-c9f45b?style=flat-square&labelColor=141714" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/React-19-c9f45b?style=flat-square&labelColor=141714" alt="React 19" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-ef9a75?style=flat-square&labelColor=141714" alt="MIT license" /></a>
+</p>
 
-An AI assistant MVP for company knowledge, HR policy questions, and employee request workflows.
+<p align="center">
+  <a href="#quick-start"><strong>Quick start</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#what-to-try">Demo flows</a>
+  &nbsp;·&nbsp;
+  <a href="#architecture">Architecture</a>
+  &nbsp;·&nbsp;
+  <a href="#development">Development</a>
+</p>
 
-The demo is built around HR and IT policies because they are easy to understand in a portfolio review. The architecture itself is domain-agnostic: the same product pattern can support healthcare operations, construction teams, compliance departments, finance operations, field teams, or customer support teams that need document-grounded answers and lightweight internal workflows.
+PeopleFlow AI is a local-first HR operations demo. Employees ask questions against approved company documents, continue real conversations, request PTO, and report sick leave without leaving one workspace.
 
-## Features
+Managers keep the decisions. Knowledge admins keep the sources and answer quality under control. Every important state is persisted locally and remains easy to inspect.
 
-- Employee-facing AI chat with streaming answers
-- Retrieval-augmented generation over internal documents
-- Source citations with document title, section, category, version, and highlighted evidence
-- Safe workflow creation for PTO, sick leave, and document requests
-- Confirmation drawer before a request is sent for review
-- Manager inbox with filters, counters, approval/decline actions, comments, and status timeline
-- Knowledge Admin source library with document upload, download, deletion, indexing, and health metrics
-- Unified Quality queue for anonymized feedback and genuine document knowledge gaps
-- Six focused AI controls, editable system prompt, and a side-effect-free test request preview
-- Versioned `/api/v1` contract for a React frontend
-- Demo authentication with predefined Employee, Manager, and Knowledge Admin roles
-- Local-first setup with FastAPI, React, TypeScript, Vite, Tailwind CSS, SQLite, and OpenAI models
+> [!NOTE]
+> This is a focused tech demo, not a production HRIS. It intentionally proves two complete workflows instead of collecting unfinished features.
 
-## Business Value
+## Quick start
 
-Internal teams repeatedly answer the same operational questions: policies, benefits, access requests, schedules, onboarding, compliance rules, safety procedures, and document requests.
+**You need:** Windows PowerShell, Git, Python 3.10+, and Node.js 22+.
 
-This project demonstrates a practical internal assistant that does more than generate text:
+### 1. Clone
 
-- grounds answers in approved company documents;
-- creates requests only after explicit user confirmation;
-- gives managers a real approval queue instead of an unstructured chat transcript;
-- lets knowledge admins maintain source documents and investigate rated AI answers without exposing employee identity;
-- can be adapted to other industries by replacing documents, prompts, workflow types, and admin policies.
+~~~powershell
+git clone https://github.com/JDH-d/AI-in-HR_DEMO.git
+cd AI-in-HR_DEMO
+~~~
 
-For a business reviewer, the value proposition is simple: reduce repetitive internal support work while keeping answers tied to approved materials and preserving a clear audit trail for actions.
+### 2. Add your OpenAI key
 
-## Product Surfaces
+~~~powershell
+Copy-Item .env.example .env
+notepad .env
+~~~
 
-| Surface | Route | Purpose |
-|---------|-------|---------|
-| Employee Workspace | `/employee` | Ask policy questions, review sources, create confirmed workflow requests, send feedback. |
-| Manager Inbox | `/manager` | Review incoming requests, approve/decline, leave comments, inspect timeline history. |
-| Knowledge Admin | `/knowledge` | Maintain source documents, work the unified Quality queue, monitor metrics, and safely test AI settings before applying them. |
-| API Docs | `/docs` | Inspect and test the FastAPI contract. |
+Replace <code>your_openai_api_key</code>, save the file, and close Notepad. The model defaults are ready to use.
 
-## Demo Accounts
+> [!TIP]
+> No API key yet? You can still run the demo. It will use deterministic answers and lexical document search.
 
-The demo uses a safe local login flow. Arbitrary `User ID`, `X-User`, and free-form identity headers are not accepted by the active API.
+### 3. Start
 
-| Username | Role | Main UI |
-|----------|------|---------|
-| `employee` | Employee | `/employee` |
-| `manager` | Manager | `/manager` |
-| `knowledge_admin` | Knowledge Admin | `/knowledge` |
+~~~powershell
+./run_demo.ps1 -InstallDeps
+~~~
 
-The default local password is controlled by `DEMO_LOGIN_PASSWORD`. The included scripts use `demo-password` unless you override it.
+This one command creates the Python environment, installs backend and frontend dependencies, rebuilds the knowledge index, and starts both services.
 
-## Project Structure
+When the terminal says <code>Demo services started</code>, open:
 
-```text
-.
-|-- app.py                    # FastAPI entrypoint
-|-- api/                      # Versioned API routes, schemas, and auth dependencies
-|-- core/                     # Settings and environment helpers
-|-- services/                 # Chat, auth, documents, logs, LLM wrapper, runtime wiring
-|-- rag/                      # Prompts, retrieval, document indexing, evaluation helpers
-|-- workflow.py               # SQLite workflow storage and event history
-|-- frontend/                 # React SPA, design system, and role workspaces
-|-- web_ui/                   # Legacy Streamlit reference implementation
-|-- documents/                # Demo knowledge base documents
-|-- docs/                     # API and architecture notes
-|-- evals/                    # RAG evaluation set
-|-- tests/                    # Backend and frontend-adjacent tests
-|-- run_demo.ps1              # Starts API and React UI
-|-- stop_demo.ps1             # Stops local demo services
-|-- smoke_check.ps1           # Demo readiness validation
-|-- requirements.txt          # Runtime Python dependencies
-|-- requirements-dev.txt      # Test, lint, and formatting dependencies
-|-- .env.example              # Example environment file
-`-- README.md                 # This file
-```
+**[http://127.0.0.1:5173](http://127.0.0.1:5173)**
 
-## Prerequisites
+Sign in with <code>employee</code> and <code>demo-password</code>. You are ready.
 
-- Python 3.10+
-- Node.js 22+
-- An OpenAI API key
-- Windows PowerShell for the included demo scripts
-- Optional: Docker, if you want to run the API-only container
+### Demo accounts
 
-## Quickstart
+All accounts use the password <code>demo-password</code>.
 
-1. Create and activate a virtual environment.
+| Username | Workspace | What it demonstrates |
+| --- | --- | --- |
+| <code>employee</code> | Employee | Grounded chat, history, PTO, sick leave |
+| <code>manager</code> | Manager | PTO decisions and sick-leave acknowledgement |
+| <code>knowledge_admin</code> | Knowledge | Documents, retrieval quality, metrics, AI settings |
 
-   Windows PowerShell:
+### Everyday commands
 
-   ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
+| Action | Command |
+| --- | --- |
+| Start after the first setup | <code>./run_demo.ps1</code> |
+| Restart launcher-owned services | <code>./run_demo.ps1 -ForceRestart</code> |
+| Stop safely | <code>./stop_demo.ps1</code> |
+| Verify the whole project | <code>./smoke_check.ps1</code> |
 
-   macOS/Linux:
+<details>
+<summary><strong>PowerShell blocks script execution?</strong></summary>
 
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
+Run this once in the current terminal, then start the demo again:
 
-2. Create a local environment file.
+~~~powershell
+Set-ExecutionPolicy -Scope Process Bypass
+~~~
 
-   ```powershell
-   Copy-Item .env.example .env
-   ```
+</details>
 
-3. Edit `.env` and set at least `OPENAI_API_KEY`.
+## What to try
 
-   For local-only demos, you can keep the default `DEMO_LOGIN_PASSWORD=demo-password`. For anything shared outside your machine, replace `DEMO_AUTH_SECRET` with a long random value.
+| Flow | Start here | What to look for |
+| --- | --- | --- |
+| **Grounded chat** | Ask <code>When is payroll processed?</code> | Streamed answer, approved sources, contextual follow-up, persistent history |
+| **PTO** | Create time off as <code>employee</code> | Draft review, submission animation, manager approval or decline, shared timeline |
+| **Sick leave** | Report an absence as <code>employee</code> | Availability-first form, direct report, manager acknowledgement instead of approval |
+| **Knowledge operations** | Open Documents as <code>knowledge_admin</code> | Upload, safe index rebuild, lexical fallback, gaps, feedback, editable AI behavior |
 
-4. Start the full local demo.
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\run_demo.ps1 -InstallDeps -ForceRestart
-   ```
-
-5. Open the React UI.
-
-   - React UI: http://127.0.0.1:5173
-   - Employee: http://127.0.0.1:5173/employee
-   - Manager: http://127.0.0.1:5173/manager
-   - Knowledge Admin: http://127.0.0.1:5173/knowledge
-   - API: http://127.0.0.1:8000
-   - API health: http://127.0.0.1:8000/api/v1/health
-   - API docs: http://127.0.0.1:8000/docs
-
-6. Stop the demo.
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\stop_demo.ps1
-   ```
-
-## Manual Development Run
-
-If you prefer to run backend and frontend separately:
-
-```powershell
-pip install -r requirements-dev.txt
-cd frontend
-npm install
-```
-
-Start the API from the repository root:
-
-```powershell
-uvicorn app:app --reload --host 127.0.0.1 --port 8000
-```
-
-Start the React app from `frontend/`:
-
-```powershell
-$env:VITE_API_URL = "http://127.0.0.1:8000"
-npm run dev -- --host 127.0.0.1 --port 5173
-```
-
-## Environment
-
-The app reads configuration from environment variables via `.env`.
-
-| Variable | Required | Default | Notes |
-|----------|----------|---------|-------|
-| `OPENAI_API_KEY` | Yes | - | OpenAI API key used for generation and embeddings. |
-| `OPENAI_MODEL` | No | `gpt-5-nano-2025-08-07` | Explicit model snapshot used by the assistant. |
-| `OPENAI_TIMEOUT_SECONDS` | No | `30` | OpenAI request timeout in seconds. |
-| `OPENAI_MAX_RETRIES` | No | `2` | SDK retries for transient API failures. |
-| `EMBEDDING_MODEL` | No | `text-embedding-3-small` | Embedding model for document retrieval. |
-| `DEMO_AUTH_SECRET` | Yes | Development fallback | HMAC secret used to sign demo access tokens. |
-| `DEMO_LOGIN_PASSWORD` | No | `demo-password` | Shared local password for predefined demo accounts. |
-| `DEMO_TOKEN_TTL_SECONDS` | No | `28800` | Demo token lifetime in seconds. |
-| `CORS_ORIGINS` | No | React localhost origins | Comma-separated allowed React origins. |
-| `DOCUMENTS_DIR` | No | `documents` | Directory containing source documents. |
-| `INDEX_PATH` | No | `data/index.json` | Local retrieval index path. |
-| `INDEX_STATUS_PATH` | No | `data/index_status.json` | Local document indexing status path. |
-| `LOG_PATH` | No | `data/chat_logs.jsonl` | Chat log path. |
-| `WORKFLOW_DB` | No | `data/workflow.db` | SQLite workflow database path. |
-| `SYSTEM_PROMPT_PATH` | No | `data/system_prompt.txt` | Runtime-editable system prompt path. |
-| `AI_SETTINGS_PATH` | No | `data/ai_settings.json` | Runtime storage for the six Knowledge Admin AI controls. |
-| `LOG_USER_TEXT_MODE` | No | `masked` | Use `masked`, `raw`, or `off`. |
-| `VITE_API_URL` | No | Same origin | API URL used by the React frontend in development/builds. |
-| `API_BASE_URL` | No | `http://127.0.0.1:8000` | API URL used by the legacy Streamlit reference UI. |
-
-## How It Works
-
-- Employee, Manager, and Knowledge Admin sign in with predefined demo identities.
-- Login returns an expiring signed Bearer token.
-- The React UI communicates with the versioned `/api/v1` backend.
-- `ChatService` classifies the message as a policy question, workflow action, or general assistant request.
-- Policy questions go through the RAG layer, which retrieves relevant chunks from documents and sends grounded context to the model.
-- Action-oriented messages prepare workflow drafts, but a request is created only after explicit confirmation.
-- Workflow transitions are protected: invalid status changes are rejected, and every meaningful change is written to `request_events`.
-- Managers can approve, decline with a required comment, add comments, and inspect the full timeline.
-- Knowledge Admins can upload, download, delete, and index documents; investigate anonymized rated conversations and genuine knowledge gaps in one Quality queue; and preview unsaved AI settings without creating requests or analytics noise.
+A complete presenter walkthrough is available in [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md).
 
 ## Architecture
 
-```mermaid
+The React app talks only to the versioned FastAPI contract. Application services own the use cases; domain rules and persistence stay outside the HTTP layer.
+
+~~~mermaid
 flowchart LR
-    React["React UI<br/>Employee / Manager / Knowledge Admin"] --> API["FastAPI /api/v1"]
-    API --> Auth["Signed demo identity"]
-    API --> Chat["ChatService"]
-    Chat --> Intent["Intent detection"]
-    Chat --> RAG["RAG retrieval"]
-    Chat --> Workflow["Workflow service"]
-    RAG --> Docs["documents/"]
-    RAG --> Index["Local index"]
-    Workflow --> SQLite["SQLite workflow.db"]
-    API --> Metrics["Admin metrics"]
-    API --> Feedback["Feedback"]
-```
+    E[Employee] --> UI[React SPA]
+    M[Manager] --> UI
+    K[Knowledge admin] --> UI
 
-More detail is available in [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md).
+    UI --> API[FastAPI /api/v1]
+    API --> CHAT[Chat service]
+    API --> FLOW[Workflow service]
+    API --> OPS[Knowledge operations]
 
-## API Contract
+    CHAT --> RAG[Retrieval]
+    RAG --> DOCS[Approved documents]
+    CHAT --> HISTORY[(Conversation SQLite)]
+    FLOW --> REQUESTS[(Workflow SQLite)]
+    OPS --> DOCS
+~~~
 
-The active backend contract is versioned under `/api/v1`.
+| Layer | Technology | Responsibility |
+| --- | --- | --- |
+| Interface | React 19, TypeScript, Vite, Tailwind | Three role-based workspaces |
+| API | FastAPI, Pydantic | Authentication, validation, role boundaries |
+| AI | OpenAI Responses API + embeddings | Generated answers and semantic retrieval |
+| Fallback | Deterministic responses + lexical search | Usable demo without provider access |
+| State | SQLite + atomic JSON files | Conversations, workflows, feedback, index metadata |
+| Quality | Pytest, Vitest, Ruff, Biome, GitHub Actions | Repeatable local and CI verification |
 
-Core routes:
+For the full boundaries and persistence flows, read [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md).
 
-- `POST /api/v1/auth/login`
-- `GET /api/v1/me`
-- `POST /api/v1/chat`
-- `POST /api/v1/chat/stream`
-- `GET /api/v1/requests`
-- `POST /api/v1/requests`
-- `GET /api/v1/requests/{id}`
-- `POST /api/v1/requests/{id}/submit`
-- `POST /api/v1/requests/{id}/approve`
-- `POST /api/v1/requests/{id}/decline`
-- `GET /api/v1/documents`
-- `POST /api/v1/documents`
-- `GET /api/v1/documents/{id}/download`
-- `DELETE /api/v1/documents/{id}`
-- `POST /api/v1/documents/{id}/index`
-- `POST /api/v1/feedback`
-- `GET /api/v1/admin/feedback`
-- `GET /api/v1/admin/unanswered`
-- `POST /api/v1/admin/quality/{id}`
-- `GET /api/v1/admin/ai-settings`
-- `PUT /api/v1/admin/ai-settings`
-- `POST /api/v1/admin/ai-settings/test`
-- `GET /api/v1/admin/metrics`
+## Configuration
 
-Full API notes are available in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).
+The local <code>.env</code> stays intentionally small:
 
-## Example Questions
+~~~dotenv
+OPENAI_API_KEY=your_openai_api_key
 
-- What can you help with?
-- How often are salaries paid?
-- How far in advance should I request vacation?
-- Can I request partial-day PTO?
-- How do I request VPN access?
-- I need vacation from 2030-04-10 to 2030-04-12
+OPENAI_MODEL=gpt-5-nano-2025-08-07
+EMBEDDING_MODEL=text-embedding-3-small
+~~~
 
-## Demo Flow
+Only the first value needs to change. Runtime paths, authentication, CORS, logging, retries, and timeouts already have local defaults.
 
-1. Sign in as `employee`.
-2. Ask what the assistant can help with.
-3. Ask a policy question about payroll, benefits, schedules, VPN access, or PTO.
-4. Open sources and show the highlighted evidence excerpt.
-5. Ask for vacation from `2030-04-10` to `2030-04-12`.
-6. Review the prefilled drawer and submit the request.
-7. Sign in as `manager`, open the request marked `in review`, and approve or decline it.
-8. Sign in as `knowledge_admin`, maintain the source library, and review anonymized positive and negative answer feedback.
+OpenAI requests may contain the employee question, recent conversation context, and retrieved document excerpts. Do not use sensitive production data in this demo unless your data policy allows it.
 
-Detailed scripts are available in [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md).
+## Development
 
-## Runtime Data and Git Hygiene
+### Project map
 
-The repository intentionally does not commit local runtime state.
+~~~text
+api/routes/                  HTTP endpoints and role checks
+services/                    Chat, documents, history, settings, runtime wiring
+rag/                         Indexing, retrieval, routing, prompts
+workflow_domain.py           Request rules and validation
+workflow_service.py          Authorization and use cases
+workflow_repository.py       Operational SQLite queries
+workflow_schema.py           Schema creation and migrations
+frontend/src/features/       Employee, manager, request, and knowledge UI
+documents/                   Approved demo source material
+tests/                       Isolated backend coverage
+~~~
 
-Tracked:
+<details>
+<summary><strong>Run without the launcher</strong></summary>
 
-- source code;
-- tests and evaluation fixtures;
-- sample knowledge documents in `documents/`;
-- `data/.gitkeep` only, so the runtime directory exists after clone.
+Create the environment and install dependencies:
 
-Ignored:
+~~~powershell
+python -m venv .venv
+./.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+npm --prefix frontend ci
+~~~
 
-- `.env` and local environment variants;
-- `.demo_logs/` and `.demo_state/`;
-- `data/workflow.db`;
-- `data/chat_logs.jsonl`;
-- `data/index.json`;
-- `data/index_status.json`;
-- `data/system_prompt.txt`;
-- `data/ai_settings.json`;
-- frontend build artifacts and `frontend/node_modules/`.
+Start the API in terminal 1:
 
-This means a fresh clone starts with a clean workflow database. New demo requests, manager comments, chat logs, feedback, and local indexes are generated on the developer's machine and should not be committed.
+~~~powershell
+./.venv/Scripts/python.exe -m uvicorn app:app --reload --host 127.0.0.1 --port 8000
+~~~
 
-## Validation
+Start the UI in terminal 2:
 
-Run the backend test suite, static checks, RAG evaluation, and frontend checks:
+~~~powershell
+npm --prefix frontend run dev
+~~~
 
-```powershell
-python -m pytest -q
-python -m ruff check .
-python -m ruff format --check .
-python -m scripts.run_rag_eval
-cd frontend
-npm test
-npm run build
-```
+On macOS or Linux, use <code>python3</code> to create the environment and <code>./.venv/bin/python</code> for the Python commands.
 
-Before a live demo, run the smoke check:
+</details>
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\smoke_check.ps1
-```
+### Validate everything
 
-The smoke check validates unit tests, RAG evaluation, API v1 login, role authorization, draft submission, manager approval, metrics, document IDs, and frontend build readiness.
+~~~powershell
+./smoke_check.ps1
+~~~
 
-## API-Only Docker Run
+The smoke check runs backend lint and tests, the deterministic RAG evaluation, frontend checks and build, then exercises authentication, history, streaming, PTO, sick leave, documents, and metrics against an isolated API.
 
-```powershell
-docker build -t ai-hr-knowledge-assistant .
-docker run --rm -p 8000:8000 --env-file .env ai-hr-knowledge-assistant
-```
+<details>
+<summary><strong>Run checks individually</strong></summary>
 
-The Docker target is intentionally API-only. `run_demo.ps1` starts the API and the Vite React frontend for local presentation.
+~~~powershell
+./.venv/Scripts/python.exe -m ruff check .
+./.venv/Scripts/python.exe -m ruff format --check .
+./.venv/Scripts/python.exe -m pytest -q
+./.venv/Scripts/python.exe -m scripts.run_rag_eval
+npm --prefix frontend run check
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+~~~
 
-## Known Limitations
+To verify the configured embedding provider instead of the deterministic lexical path:
 
-- Demo authentication is not a production SSO/OAuth integration.
-- SQLite and file-based runtime state are used for local simplicity.
-- The local retrieval index is suitable for an MVP demo, not for production-scale enterprise search.
-- Document-level permissions and tenant isolation are not implemented.
-- The workflow model is intentionally focused on a small set of request types.
-- The legacy Streamlit UI remains as reference code, but the React app is the active presentation UI.
+~~~powershell
+./.venv/Scripts/python.exe -m scripts.run_rag_eval --use-embeddings
+~~~
 
-## Roadmap
+</details>
 
-- Add production authentication with SSO/OAuth and stronger role-based access control.
-- Move workflow state to a production database.
-- Replace the local JSON retrieval index with production search or vector storage.
-- Add document permissions, audit exports, and admin change history.
-- Expand request types and workflow configuration.
-- Add deployment templates for a cloud environment.
-- Turn the RAG evaluation set into a visible quality dashboard.
+GitHub Actions runs the deterministic gate on Python 3.10 and 3.12 with Node.js 22.
 
-## Supporting Docs
+## Local data
 
-- API summary: [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md)
-- Architecture overview: [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md)
-- Demo script: [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md)
+- The launcher stores runtime databases and index files in <code>.demo_state/</code>.
+- Launcher logs are written to <code>.demo_logs/</code>.
+- Both directories are ignored by Git.
+- Source documents live in <code>documents/</code> and may be Markdown, text, PDF, or DOCX.
+- Conversation messages are stored in full so history can be reopened.
+- Quality logs mask employee text by default.
 
-## Troubleshooting
+## Deliberate scope
 
-- Missing API key: set `OPENAI_API_KEY` in `.env`.
-- Demo login fails: check `DEMO_LOGIN_PASSWORD` and restart all services.
-- API unavailable in the UI: confirm that http://127.0.0.1:8000/api/v1/health is healthy.
-- Frontend cannot reach the API in manual mode: set `VITE_API_URL=http://127.0.0.1:8000`.
-- Index is stale after document changes: sign in as `knowledge_admin` and run indexing from the Documents area.
-- Demo services are already running: restart with `.\run_demo.ps1 -ForceRestart`.
+- Demo authentication is intentionally simple and is not SSO or OAuth.
+- Ask HR is a fixed interaction; it does not notify a real person.
+- Document Request is intentionally absent. PTO and Sick Leave are the two complete workflows.
+- PTO counts calendar days; company-specific working calendars are outside this demo.
+- Local SQLite and files prioritize inspectability, not multi-instance deployment.
+- The Docker image serves the FastAPI API only; use the launcher for the complete experience.
 
-## Privacy & Data Handling
+<details>
+<summary><strong>Run the API-only Docker image</strong></summary>
 
-- Source documents are stored locally in `documents/`.
-- Workflow requests, audit events, manager comments, users, and feedback are stored in local SQLite.
-- Chat logs are written to JSONL and can mask, store, or omit user text via `LOG_USER_TEXT_MODE`.
-- When using OpenAI models, user questions and retrieved excerpts may be sent to the OpenAI API.
-- Do not use sensitive production data in this MVP unless your data handling policies allow it.
+~~~powershell
+docker build -t peopleflow-ai .
+docker run --rm -p 8000:8000 --env-file .env peopleflow-ai
+~~~
+
+Interactive API documentation is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+</details>
+
+## Documentation
+
+| Document | Use it for |
+| --- | --- |
+| [INSTRUCTIONS.txt](INSTRUCTIONS.txt) | Minimal local setup |
+| [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md) | Presenter walkthrough |
+| [API endpoints](docs/API_ENDPOINTS.md) | Routes, roles, payloads, errors |
+| [Architecture overview](docs/ARCHITECTURE_OVERVIEW.md) | Boundaries, storage, migrations |
+
+## License
+
+Released under the [MIT License](LICENSE).

@@ -1,23 +1,74 @@
+import { lazy, type ReactNode, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router";
-import { useAuth } from "./providers";
+import type { Role } from "../api/types";
 import { LoginPage } from "../pages/LoginPage";
-import { EmployeePage } from "../features/chat/EmployeePage";
-import { ManagerPage } from "../features/manager/ManagerPage";
-import { KnowledgePage } from "../features/knowledge-base/KnowledgePage";
+import { useAuth } from "./providers";
+
+const EmployeePage = lazy(() =>
+  import("../features/chat/EmployeePage").then((module) => ({ default: module.EmployeePage })),
+);
+const ManagerPage = lazy(() =>
+  import("../features/manager/ManagerPage").then((module) => ({ default: module.ManagerPage })),
+);
+const KnowledgePage = lazy(() =>
+  import("../features/knowledge-base/KnowledgePage").then((module) => ({
+    default: module.KnowledgePage,
+  })),
+);
 
 function Home() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === "employee" ? "/employee" : user.role === "manager" ? "/manager" : "/knowledge"} replace />;
+  const destination =
+    user.role === "employee" ? "/employee" : user.role === "manager" ? "/manager" : "/knowledge";
+  return <Navigate to={destination} replace />;
 }
+
 export function App() {
-  return <Routes><Route path="/" element={<Home/>}/><Route path="/login" element={<LoginPage/>}/>
-    <Route path="/employee" element={<Guard role="employee"><EmployeePage/></Guard>}/>
-    <Route path="/manager" element={<Guard role="manager"><ManagerPage/></Guard>}/>
-    <Route path="/knowledge" element={<Guard role="knowledge_admin"><KnowledgePage/></Guard>}/>
-    <Route path="*" element={<Navigate to="/" replace />}/></Routes>;
+  return (
+    <Suspense fallback={<WorkspaceLoading />}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/employee"
+          element={
+            <Guard requiredRole="employee">
+              <EmployeePage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/manager"
+          element={
+            <Guard requiredRole="manager">
+              <ManagerPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/knowledge"
+          element={
+            <Guard requiredRole="knowledge_admin">
+              <KnowledgePage />
+            </Guard>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
+  );
 }
-function Guard({ role, children }: { role: string; children: React.ReactNode }) {
+
+function Guard({ requiredRole, children }: { requiredRole: Role; children: ReactNode }) {
   const { user } = useAuth();
-  return user?.role === role ? children : <Navigate to="/login" replace />;
+  return user?.role === requiredRole ? children : <Navigate to="/login" replace />;
+}
+
+function WorkspaceLoading() {
+  return (
+    <main className="grid min-h-screen place-items-center text-sm text-muted" role="status">
+      Opening workspace…
+    </main>
+  );
 }

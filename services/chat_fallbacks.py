@@ -4,7 +4,7 @@ from rag.topic_guidance import get_topic_examples
 
 
 class ChatFallbackPolicy:
-    def capabilities(self, language: str) -> str:
+    def capabilities(self) -> str:
         return (
             "I can help with the following topics:\n"
             "1. PTO, vacation, and sick leave\n"
@@ -14,14 +14,20 @@ class ChatFallbackPolicy:
             "5. IT support, including VPN, access permissions, and password resets"
         )
 
-    def small_talk(self, language: str) -> str:
+    def small_talk(self) -> str:
         return "Hello. I can help with PTO and leave, payroll, benefits, schedules, or IT support."
 
-    def topic_selection(self, language: str, topic: str) -> str:
+    def hr_support(self) -> str:
+        return (
+            "I’ve opened a private HR support request for you. An HR partner will review it "
+            "and follow up here. You can add any helpful context in this conversation."
+        )
+
+    def topic_selection(self, topic: str) -> str:
         examples = self._format_topic_examples(topic)
         return f"You selected {topic}. What would you like to know?\nExamples:\n{examples}"
 
-    def topic_answer(self, language: str, topic: str, matched_text: str) -> str:
+    def topic_answer(self, topic: str, matched_text: str) -> str:
         cleaned = (matched_text or "").strip()
         if cleaned:
             return cleaned
@@ -30,22 +36,21 @@ class ChatFallbackPolicy:
             f"I can help with {topic}, but I need a more specific question.\nExamples:\n{examples}"
         )
 
-    def invalid(self, language: str) -> str:
+    def invalid(self) -> str:
         return (
             "I can assist only with supported workplace topics such as PTO and leave, payroll, "
             "benefits, work schedules, and IT support."
         )
 
-    def no_docs(self, language: str) -> str:
+    def no_docs(self) -> str:
         return (
-            "I could not find a reliable answer in the internal documents.\n"
-            + self.capabilities(language)
+            "I could not find a reliable answer in the internal documents.\n" + self.capabilities()
         )
 
-    def service_unavailable(self, language: str) -> str:
+    def service_unavailable(self) -> str:
         return (
             "The assistant service is temporarily unavailable. Please try again in 1 to 2 minutes.\n"
-            + self.capabilities(language)
+            + self.capabilities()
         )
 
     @staticmethod

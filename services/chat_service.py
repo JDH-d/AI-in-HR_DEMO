@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-from fastapi import HTTPException
+from collections.abc import Iterator
 
-from api.schemas import ChatRequest, ChatResponse, Message, SourceChunk
+from rag.index import KnowledgeIndex
 from rag.nlp import Intent
 from workflow import WorkflowService
 
 from .ai_settings_service import AI_SETTINGS_DEFAULTS, AISettingsService
 from .chat_fallbacks import ChatFallbackPolicy
-from .chat_models import ChatOutcome, ChatQuery, ChatTurn
+from .chat_models import ChatOutcome, ChatQuery, ChatStreamUpdate
 from .chat_router import ChatRouter
-from .document_service import DocumentService
-from .llm_service import LLMService
+from .llm_service import LLMService, LLMServiceError
 from .log_service import ChatLogService
-from .rag_service import RAGService
+from .rag_service import PreparedRAGAnswer, RAGService
+
+
+class ChatValidationError(ValueError):
+    pass
 
 
 class ChatService:
@@ -22,76 +25,28 @@ class ChatService:
         workflow_service: WorkflowService,
         llm_service: LLMService,
         log_service: ChatLogService,
-        document_service: DocumentService,
         router: ChatRouter | None = None,
         fallback_policy: ChatFallbackPolicy | None = None,
         rag_service: RAGService | None = None,
         ai_settings_service: AISettingsService | None = None,
+        knowledge_index: KnowledgeIndex | None = None,
     ) -> None:
         self.workflow_service = workflow_service
         self.llm_service = llm_service
         self.log_service = log_service
-        self.document_service = document_service
         self.ai_settings_service = ai_settings_service
         self.fallback_policy = fallback_policy or ChatFallbackPolicy()
-        self.router = router or ChatRouter(document_service)
-        self.rag_service = rag_service or RAGService(
-            llm_service=llm_service,
-            document_service=document_service,
-            fallback_policy=self.fallback_policy,
-            ai_settings_service=ai_settings_service,
-        )
-
-    def handle_chat(
-        self,
-        req: ChatRequest,
-        created_by: str,
-        *,
-        settings_override: dict[str, bool] | None = None,
-        system_prompt_override: str | None = None,
-        log_outcome: bool = True,
-        allow_workflow: bool = True,
-    ) -> ChatResponse:
-        active_settings = settings_override or (
-            self.ai_settings_service.get()
-            if self.ai_settings_service is not None
-            else dict(AI_SETTINGS_DEFAULTS)
-        )
-        query = ChatQuery(
-            messages=[
-                ChatTurn(role=message.role, content=message.content) for message in req.messages
-            ],
-            top_k=req.top_k or 4,
-            min_similarity=req.min_similarity or 0.25,
-        )
-        outcome = self.respond(
-            query,
-            created_by=created_by,
-            settings=active_settings,
-            system_prompt=system_prompt_override,
-            log_outcome=log_outcome,
-            allow_workflow=allow_workflow,
-        )
-        return ChatResponse(
-            message=Message(role="assistant", content=outcome.content),
-            intent=outcome.intent.value,
-            language=outcome.language,
-            sources=[
-                SourceChunk(
-                    source=source.source,
-                    title=source.title,
-                    section=source.section,
-                    category=source.category,
-                    version=source.version,
-                    excerpt=source.excerpt,
-                    score=source.score,
-                )
-                for source in outcome.sources
-            ]
-            if active_settings.get("show_sources", True)
-            else [],
-            workflow_request=outcome.workflow_request,
-        )
+        self.router = router or ChatRouter()
+        if rag_service is None:
+            if knowledge_index is None:
+                raise ValueError("knowledge_index is required when rag_service is not provided")
+            rag_service = RAGService(
+                llm_service=llm_service,
+                fallback_policy=self.fallback_policy,
+                ai_settings_service=ai_settings_service,
+                knowledge_index=knowledge_index,
+            )
+        self.rag_service = rag_service
 
     def respond(
         self,
@@ -104,29 +59,103 @@ class ChatService:
         allow_workflow: bool = True,
     ) -> ChatOutcome:
         if not query.messages:
-            raise HTTPException(
-                status_code=400, detail="The request must include at least one message."
-            )
+            raise ChatValidationError("The request must include at least one message.")
 
         latest_user = query.latest_user_message
         if latest_user is None:
-            raise HTTPException(
-                status_code=400,
-                detail="The request must include at least one user message.",
-            )
+            raise ChatValidationError("The request must include at least one user message.")
 
-        decision = self.router.route(query)
-        outcome = self._resolve_outcome(
+        active_settings, active_system_prompt = self._resolve_configuration(
+            settings,
+            system_prompt,
+        )
+        prepared = self._resolve_outcome(
             query,
-            decision,
+            self.router.route(query),
             created_by,
-            settings=settings,
-            system_prompt=system_prompt,
+            settings=active_settings,
+            system_prompt=active_system_prompt,
             allow_workflow=allow_workflow,
+        )
+        outcome = (
+            prepared
+            if isinstance(prepared, ChatOutcome)
+            else prepared.complete(
+                self.rag_service.generate_with_fallback(
+                    prepared.prompt_messages,
+                    prepared.fallback_text,
+                )
+            )
         )
         if log_outcome:
             self._log_outcome(latest_user.content, outcome)
         return outcome
+
+    def stream(
+        self,
+        query: ChatQuery,
+        created_by: str,
+        *,
+        settings: dict[str, bool] | None = None,
+        system_prompt: str | None = None,
+        log_outcome: bool = True,
+        allow_workflow: bool = True,
+    ) -> Iterator[ChatStreamUpdate]:
+        if not query.messages:
+            raise ChatValidationError("The request must include at least one message.")
+        latest_user = query.latest_user_message
+        if latest_user is None:
+            raise ChatValidationError("The request must include at least one user message.")
+
+        active_settings, active_system_prompt = self._resolve_configuration(
+            settings,
+            system_prompt,
+        )
+        prepared = self._resolve_outcome(
+            query,
+            self.router.route(query),
+            created_by,
+            settings=active_settings,
+            system_prompt=active_system_prompt,
+            allow_workflow=allow_workflow,
+        )
+        workflow_request = prepared.workflow_request if isinstance(prepared, ChatOutcome) else None
+        stream_completed = False
+        try:
+            if isinstance(prepared, ChatOutcome):
+                yield ChatStreamUpdate(kind="token", content=prepared.content)
+                outcome = prepared
+            else:
+                tokens: list[str] = []
+                try:
+                    for token in self.llm_service.stream_generate(prepared.prompt_messages):
+                        tokens.append(token)
+                        yield ChatStreamUpdate(kind="token", content=token)
+                    content = "".join(tokens).strip()
+                    if not content:
+                        content = prepared.fallback_text
+                        yield ChatStreamUpdate(
+                            kind="replace" if tokens else "token",
+                            content=content,
+                        )
+                except LLMServiceError:
+                    content = prepared.fallback_text
+                    yield ChatStreamUpdate(
+                        kind="replace" if tokens else "token",
+                        content=content,
+                    )
+                outcome = prepared.complete(content)
+
+            if log_outcome:
+                self._log_outcome(latest_user.content, outcome)
+            stream_completed = True
+            yield ChatStreamUpdate(kind="complete", outcome=outcome)
+        finally:
+            if not stream_completed and workflow_request:
+                self.workflow_service.discard_unshared_draft(
+                    workflow_request["id"],
+                    created_by,
+                )
 
     def _resolve_outcome(
         self,
@@ -137,9 +166,17 @@ class ChatService:
         settings: dict[str, bool] | None,
         system_prompt: str | None,
         allow_workflow: bool,
-    ) -> ChatOutcome:
+    ) -> ChatOutcome | PreparedRAGAnswer:
         latest_user = query.latest_user_message
         assert latest_user is not None
+
+        if self._is_hr_support_request(latest_user.content):
+            return ChatOutcome(
+                content=self.fallback_policy.hr_support(),
+                intent=Intent.WORK,
+                language=decision.language,
+                outcome_code="handoff_demo",
+            )
 
         workflow_request = (
             self.workflow_service.prepare_draft(
@@ -158,30 +195,33 @@ class ChatService:
                 intent=Intent.WORK,
                 language=decision.language,
                 workflow_request=workflow_request,
+                outcome_code="workflow",
             )
 
         if decision.intent == Intent.CAPABILITIES:
             return ChatOutcome(
-                content=self.fallback_policy.capabilities(decision.language),
+                content=self.fallback_policy.capabilities(),
                 intent=decision.intent,
                 language=decision.language,
+                outcome_code="guided",
             )
 
         if decision.intent == Intent.SMALL_TALK:
             return ChatOutcome(
-                content=self.fallback_policy.small_talk(decision.language),
+                content=self.fallback_policy.small_talk(),
                 intent=decision.intent,
                 language=decision.language,
+                outcome_code="guided",
             )
 
         if decision.topic_selection:
             return ChatOutcome(
                 content=self.fallback_policy.topic_selection(
-                    decision.language,
                     decision.topic_selection,
                 ),
                 intent=decision.intent,
                 language=decision.language,
+                outcome_code="guided",
             )
 
         if (
@@ -191,19 +231,35 @@ class ChatService:
         ):
             return ChatOutcome(
                 content=self.fallback_policy.topic_answer(
-                    decision.language,
                     decision.prior_topic,
                     "",
                 ),
                 intent=Intent.WORK,
                 language=decision.language,
+                outcome_code="guided",
             )
 
-        return self.rag_service.answer_with_retrieval(
+        return self.rag_service.prepare_answer(
             query,
             decision,
             settings=settings,
             system_prompt=system_prompt,
+        )
+
+    def _resolve_configuration(
+        self,
+        settings: dict[str, bool] | None,
+        system_prompt: str | None,
+    ) -> tuple[dict[str, bool], str | None]:
+        if settings is not None and system_prompt is not None:
+            return settings, system_prompt
+        if self.ai_settings_service is None:
+            return settings or dict(AI_SETTINGS_DEFAULTS), system_prompt
+
+        configuration = self.ai_settings_service.get_configuration()
+        return (
+            settings if settings is not None else configuration["settings"],
+            system_prompt if system_prompt is not None else configuration["system_prompt"],
         )
 
     @staticmethod
@@ -216,6 +272,17 @@ class ChatService:
             "what about that",
             "how does that work",
             "can you elaborate",
+        }
+
+    @staticmethod
+    def _is_hr_support_request(text: str) -> bool:
+        normalized = " ".join((text or "").lower().split()).strip(" ?.!")
+        return normalized in {
+            "ask hr",
+            "contact hr",
+            "i need help from hr",
+            "i need to speak with hr",
+            "i want to talk to hr",
         }
 
     def _log_outcome(self, user_text: str, outcome: ChatOutcome) -> None:
@@ -237,4 +304,5 @@ class ChatService:
             ]
             if outcome.sources is not None
             else None,
+            outcome_code=outcome.outcome_code,
         )

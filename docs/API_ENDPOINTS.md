@@ -1,9 +1,8 @@
-# API v1 Contract
+# API v1 contract
 
-The React-facing API is versioned under `/api/v1`. Except for health and login,
-every endpoint requires `Authorization: Bearer <token>`.
+The React application uses `/api/v1`. Health and login are public; every other route requires `Authorization: Bearer <token>`.
 
-## Demo Authentication
+## Authentication
 
 `POST /api/v1/auth/login`
 
@@ -14,88 +13,129 @@ every endpoint requires `Authorization: Bearer <token>`.
 }
 ```
 
-Available predefined accounts are `employee`, `manager`, and
-`knowledge_admin`. The password comes from `DEMO_LOGIN_PASSWORD`. Tokens are
-HMAC-signed, expire after `DEMO_TOKEN_TTL_SECONDS`, and resolve to server-owned
-identities. `X-User` and arbitrary user IDs are not accepted.
+Valid usernames are `employee`, `manager`, and `knowledge_admin`. The server maps each name to a fixed identity and manager relationship. Tokens are HMAC-signed and expire after `DEMO_TOKEN_TTL_SECONDS`; identity headers and arbitrary user IDs are not accepted.
 
-## Core Routes
+## Routes and roles
 
-| Method | Path | Role |
+| Method | Path | Access |
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Public |
 | `POST` | `/api/v1/auth/login` | Public |
-| `POST` | `/api/v1/chat` | Authenticated |
 | `GET` | `/api/v1/me` | Authenticated |
+| `POST` | `/api/v1/chat` | Employee |
+| `POST` | `/api/v1/chat/stream` | Employee |
+| `GET` | `/api/v1/conversations` | Employee owner |
+| `GET` | `/api/v1/conversations/{id}` | Employee owner |
 | `GET` | `/api/v1/requests` | Authenticated, role-scoped |
 | `POST` | `/api/v1/requests` | Employee |
-| `GET` | `/api/v1/requests/{id}` | Owner, Manager, Knowledge Admin |
+| `GET` | `/api/v1/requests/{id}` | Employee owner, assigned Manager, or Knowledge Admin |
 | `POST` | `/api/v1/requests/{id}/submit` | Employee owner |
 | `POST` | `/api/v1/requests/{id}/cancel` | Employee owner |
-| `POST` | `/api/v1/requests/{id}/approve` | Manager |
-| `POST` | `/api/v1/requests/{id}/decline` | Manager |
-| `POST` | `/api/v1/requests/{id}/comments` | Manager |
+| `POST` | `/api/v1/requests/{id}/approve` | Assigned Manager, PTO only |
+| `POST` | `/api/v1/requests/{id}/decline` | Assigned Manager, PTO only |
+| `POST` | `/api/v1/requests/{id}/acknowledge` | Assigned Manager, sick leave only |
+| `POST` | `/api/v1/requests/{id}/comments` | Assigned Manager |
 | `GET` | `/api/v1/documents` | Knowledge Admin |
 | `POST` | `/api/v1/documents` | Knowledge Admin |
 | `GET` | `/api/v1/documents/{id}/download` | Knowledge Admin |
 | `DELETE` | `/api/v1/documents/{id}` | Knowledge Admin |
-| `POST` | `/api/v1/documents/{id}/index` | Knowledge Admin |
+| `POST` | `/api/v1/documents/index` | Knowledge Admin |
 | `POST` | `/api/v1/feedback` | Employee |
 | `GET` | `/api/v1/admin/feedback` | Knowledge Admin |
 | `GET` | `/api/v1/admin/unanswered` | Knowledge Admin |
 | `POST` | `/api/v1/admin/quality/{id}` | Knowledge Admin |
-| `GET/PUT` | `/api/v1/admin/ai-settings` | Knowledge Admin |
+| `GET`, `PUT` | `/api/v1/admin/ai-settings` | Knowledge Admin |
 | `POST` | `/api/v1/admin/ai-settings/test` | Knowledge Admin |
 | `GET` | `/api/v1/admin/metrics` | Knowledge Admin |
-| `GET/PUT` | `/api/v1/admin/system-prompt` | Knowledge Admin |
-| `GET` | `/api/v1/admin/logs` | Knowledge Admin |
 
-Document uploads accept `.md`, `.txt`, `.pdf`, and `.docx` files up to 10 MB.
-Deletion rebuilds the RAG index and is rolled back if the index cannot be refreshed.
+## Chat and history
 
-Assistant feedback stores the rated question and answer. The admin feedback route
-returns those conversation fields, rating, optional note, and timestamp without a
-user identifier.
+A new chat request omits `conversation_id`. The server creates a conversation only after it can persist the complete user/assistant exchange, so empty recent-history rows are impossible.
 
-The unanswered route returns only supported workplace questions that received no
-reliable document-backed answer. Invalid and out-of-scope prompts are excluded.
-Quality items can be marked `resolved` or `ignored`, which removes them from the
-active queue and its dashboard count.
+```json
+{
+  "messages": [{ "role": "user", "content": "When is payroll processed?" }],
+  "top_k": 4,
+  "min_similarity": 0.25,
+  "conversation_id": null
+}
+```
 
-AI settings expose six boolean controls: strict grounding, concise answers,
-clarifying questions, suggested next steps, source visibility, and automatic
-indexing after upload. The test endpoint accepts an unsaved settings payload and
-system prompt, runs a real answer preview, and deliberately disables workflow
-creation and chat logging.
+For a follow-up, send the returned `conversation_id` and only the newest user message. The server verifies ownership, loads authoritative history, and builds the internal prompt. `min_similarity` accepts the full range `0.0`–`1.0`, including an intentional zero.
 
-## Request Example
+`POST /chat/stream` returns `application/x-ndjson` with these event shapes:
 
-`POST /api/v1/requests`
+```json
+{"type":"start"}
+{"type":"token","content":"Salaries "}
+{"type":"replace","content":"Deterministic fallback text"}
+{"type":"complete","intent":"work","language":"en","outcome_code":"grounded","sources":[],"workflow_request":null,"conversation_id":"..."}
+```
+
+`replace` is emitted when provider streaming fails after partial output, preventing the UI from combining an incomplete model answer with the fallback. `outcome_code` records the semantic result independently of whether source cards are visible. A validation or persistence problem ends with `{"type":"error","message":"..."}`.
+
+Conversation detail hydrates linked request cards from current workflow state. The historical assistant text and evidence stay unchanged; status does not become stale.
+
+## Workflow requests
+
+Only `pto` and `sick_leave` are accepted. The server owns applicant and approver identity; those fields cannot be supplied by the client.
+Employee drafts remain private: manager list and detail routes expose them only after submission.
+
+PTO draft:
 
 ```json
 {
   "type": "pto",
   "start_date": "2030-04-10",
   "end_date": "2030-04-12",
-  "comment": "Family vacation"
+  "comment": "Handoff is ready.",
+  "details": {}
 }
 ```
 
-This creates a `draft`. `POST /api/v1/requests/{id}/submit` performs final
-validation and transitions it to `in_review`.
+`POST /requests` creates `draft`; `POST /requests/{id}/submit` validates it again and transitions to `in_review`. The assigned manager can then move it to `approved` or `declined`. Decline requires a comment.
 
-Manager `approve` and `decline` endpoints apply a decision to a request that is
-already `in_review`, producing a single decision audit event.
+Sick leave draft:
 
-## React Integration
+```json
+{
+  "type": "sick_leave",
+  "start_date": "2030-04-10",
+  "end_date": "2030-04-10",
+  "comment": "Coverage note",
+  "details": {
+    "expected_return_date": "2030-04-11",
+    "expected_return_unknown": false,
+    "time_away": "full_day",
+    "partial_hours": null,
+    "extended_or_recurring": false
+  }
+}
+```
 
-Configured local React origins are controlled through `CORS_ORIGINS`. The
-default allows ports `3000` and `5173` on `localhost` and `127.0.0.1`.
+Submission transitions `draft → reported`; the assigned manager uses `acknowledge` for `reported → acknowledged`. Approval and decline are invalid for sick leave. There is no diagnosis or medical-document field.
 
-HTTP error semantics:
+## Documents and indexing
 
+Uploads accept `.md`, `.txt`, `.pdf`, and `.docx` up to 10 MB. IDs are stable hashes of relative source paths, so nested files with equal stems cannot collide.
+
+Retrieval uses one corpus-wide index. `POST /documents/index` rebuilds it globally and returns `scope: "all_documents"`. Uploads rebuild automatically when that AI setting is enabled; deletes always rebuild. Both operations restore the prior document and index files if the rebuild fails.
+
+Index mode is `embedding` or `lexical`. A transient embedding failure produces a usable lexical index with a retry time rather than permanently disabling semantic retrieval.
+
+## Quality and AI settings
+
+Assistant feedback stores rating, optional note, rated question, and rated answer without an employee identifier. The unanswered queue uses explicit outcome codes; it does not infer current failures from display text. Items can be marked `resolved` or `ignored`.
+
+The AI settings preview uses the same RAG path with request-scoped unsaved settings, while workflow creation, conversation persistence, and quality logging remain disabled.
+
+## Error semantics
+
+- `400`: malformed chat or document input;
 - `401`: missing, invalid, or expired token;
-- `403`: authenticated role is not allowed;
-- `404`: resource is absent or outside the employee scope;
-- `409`: invalid workflow transition;
-- `422`: invalid fields or calendar dates.
+- `403`: role or ownership does not allow the action;
+- `404`: resource is absent or intentionally hidden outside scope;
+- `409`: duplicate document or invalid workflow transition;
+- `413`: upload exceeds 10 MB;
+- `422`: structured validation failed;
+- `503`: conversation persistence or index rebuild failed safely.

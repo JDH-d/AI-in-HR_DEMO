@@ -9,6 +9,34 @@ class SectionChunk(TypedDict):
     text: str
 
 
+_KEYWORD_STOP_WORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "about",
+    "into",
+    "you",
+    "your",
+    "are",
+    "can",
+    "how",
+    "what",
+    "which",
+    "when",
+    "where",
+    "want",
+    "know",
+    "info",
+    "information",
+    "policy",
+    "policies",
+}
+
+
 def chunk_document(
     text: str,
     max_words: int = 220,
@@ -30,15 +58,9 @@ def chunk_document(
     return chunks
 
 
-def chunk_text(text: str, max_words: int = 220, overlap_words: int = 35) -> list[str]:
-    return [
-        item["text"]
-        for item in chunk_document(
-            text,
-            max_words=max_words,
-            overlap_words=overlap_words,
-        )
-    ]
+def extract_keywords(text: str) -> list[str]:
+    words = re.findall(r"[a-z0-9]+(?:[/-][a-z0-9]+)?", (text or "").lower())
+    return list(dict.fromkeys(word for word in words if word not in _KEYWORD_STOP_WORDS))
 
 
 def _split_sections(text: str) -> list[tuple[str, str]]:

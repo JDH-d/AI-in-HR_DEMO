@@ -1,12 +1,9 @@
-import shutil
 import unittest
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from rag.nlp import Intent
 from services.chat_fallbacks import ChatFallbackPolicy
 from services.chat_models import ChatQuery, ChatTurn, RoutingDecision
-from services.document_service import DocumentService
 from services.llm_service import LLMServiceError
 from services.rag_service import RAGService
 
@@ -27,17 +24,12 @@ class RecordingLLM:
 
 class RAGServiceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = Path.cwd() / ".tmp_test_runs" / self._testMethodName
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
-        (self.temp_dir / "documents").mkdir(parents=True, exist_ok=True)
+        self.knowledge_index = Mock()
         self.rag_service = RAGService(
             llm_service=FailingLLM(),
-            document_service=DocumentService(self.temp_dir / "documents"),
             fallback_policy=ChatFallbackPolicy(),
+            knowledge_index=self.knowledge_index,
         )
-
-    def tearDown(self) -> None:
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_answer_with_retrieval_uses_extractive_fallback_when_llm_is_unavailable(self) -> None:
         query = ChatQuery(messages=[ChatTurn(role="user", content="How often are salaries paid?")])
@@ -64,11 +56,9 @@ class RAGServiceTests(unittest.TestCase):
             }
         ]
 
-        with (
-            patch("services.rag_service.ensure_index"),
-            patch("services.rag_service.get_retriever", return_value=retriever),
-        ):
-            outcome = self.rag_service.answer_with_retrieval(query, decision)
+        self.knowledge_index.get_retriever.return_value = retriever
+
+        outcome = self.rag_service.answer_with_retrieval(query, decision)
 
         self.assertIn(
             "Salaries are paid on the fifteenth and the last business day of the month.",
@@ -104,8 +94,7 @@ class RAGServiceTests(unittest.TestCase):
                 "score": 0.76,
             }
         ]
-        self.rag_service.index_ensurer = lambda: None
-        self.rag_service.retriever_provider = lambda: retriever
+        self.knowledge_index.get_retriever.return_value = retriever
 
         outcome = self.rag_service.answer_with_retrieval(query, decision)
 
@@ -116,10 +105,11 @@ class RAGServiceTests(unittest.TestCase):
         llm = RecordingLLM()
         service = RAGService(
             llm_service=llm,
-            document_service=DocumentService(self.temp_dir / "documents"),
             fallback_policy=ChatFallbackPolicy(),
-            index_ensurer=lambda: None,
-            retriever_provider=lambda: Mock(query=Mock(return_value=[])),
+            knowledge_index=Mock(
+                ensure=Mock(),
+                get_retriever=Mock(return_value=Mock(query=Mock(return_value=[]))),
+            ),
         )
         query = ChatQuery(
             messages=[ChatTurn(role="user", content="What is the relocation process?")]

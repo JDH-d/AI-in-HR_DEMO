@@ -2,38 +2,52 @@ from __future__ import annotations
 
 import logging
 import re
-import sqlite3
-from collections.abc import Callable
+from dataclasses import dataclass
 
-from rag.index import ensure_index, get_retriever
+from rag.index import KnowledgeIndex
 from rag.nlp import Intent
 from rag.prompts import build_general_prompt, build_rag_prompt
 from rag.retriever import RetrieverError
+from rag.text import extract_keywords
 
 from .ai_settings_service import AI_SETTINGS_DEFAULTS, AISettingsService
 from .chat_fallbacks import ChatFallbackPolicy
 from .chat_models import ChatOutcome, ChatQuery, RetrievedChunk, RoutingDecision
-from .document_service import DocumentService
 from .llm_service import LLMService, LLMServiceError
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PreparedRAGAnswer:
+    prompt_messages: list[dict]
+    fallback_text: str
+    intent: Intent
+    language: str
+    sources: list[RetrievedChunk]
+    outcome_code: str
+
+    def complete(self, content: str) -> ChatOutcome:
+        return ChatOutcome(
+            content=content,
+            intent=self.intent,
+            language=self.language,
+            sources=self.sources,
+            outcome_code=self.outcome_code,
+        )
 
 
 class RAGService:
     def __init__(
         self,
         llm_service: LLMService,
-        document_service: DocumentService,
         fallback_policy: ChatFallbackPolicy,
-        index_ensurer: Callable[[], None] | None = None,
-        retriever_provider: Callable | None = None,
+        knowledge_index: KnowledgeIndex,
         ai_settings_service: AISettingsService | None = None,
     ) -> None:
         self.llm_service = llm_service
-        self.document_service = document_service
         self.fallback_policy = fallback_policy
-        self.index_ensurer = index_ensurer
-        self.retriever_provider = retriever_provider
+        self.knowledge_index = knowledge_index
         self.ai_settings_service = ai_settings_service
 
     def answer_with_retrieval(
@@ -43,6 +57,27 @@ class RAGService:
         settings: dict[str, bool] | None = None,
         system_prompt: str | None = None,
     ) -> ChatOutcome:
+        prepared = self.prepare_answer(
+            query,
+            decision,
+            settings=settings,
+            system_prompt=system_prompt,
+        )
+        if isinstance(prepared, ChatOutcome):
+            return prepared
+        content = self.generate_with_fallback(
+            prepared.prompt_messages,
+            prepared.fallback_text,
+        )
+        return prepared.complete(content)
+
+    def prepare_answer(
+        self,
+        query: ChatQuery,
+        decision: RoutingDecision,
+        settings: dict[str, bool] | None = None,
+        system_prompt: str | None = None,
+    ) -> ChatOutcome | PreparedRAGAnswer:
         active_settings = settings or (
             self.ai_settings_service.get()
             if self.ai_settings_service is not None
@@ -51,74 +86,71 @@ class RAGService:
         latest_user = query.latest_user_message
         if latest_user is None:
             return ChatOutcome(
-                content=self.fallback_policy.invalid(decision.language),
+                content=self.fallback_policy.invalid(),
                 intent=decision.intent,
                 language=decision.language,
+                outcome_code="unsupported",
             )
 
         try:
-            if self.index_ensurer:
-                self.index_ensurer()
-            else:
-                ensure_index()
-            retriever = self.retriever_provider() if self.retriever_provider else get_retriever()
-            retrieval_text = latest_user.content
+            self.knowledge_index.ensure()
+            retriever = self.knowledge_index.get_retriever()
+            retrieval_text = query.retrieval_text()
             if (
                 decision.intent == Intent.WORK
                 and decision.prior_topic
                 and not decision.explicit_topic_choice
             ):
-                retrieval_text = f"{decision.prior_topic}. {retrieval_text}"
+                retrieval_text = f"{decision.prior_topic}. {latest_user.content}"
             results = retriever.query(
                 retrieval_text,
                 top_k=query.top_k,
                 min_similarity=query.min_similarity,
             )
-        except (OSError, RetrieverError, RuntimeError, sqlite3.Error, ValueError) as exc:
+        except (OSError, RetrieverError, RuntimeError, ValueError) as exc:
             logger.warning("RAG retrieval failed for intent %s: %s", decision.intent.value, exc)
             return ChatOutcome(
-                content=self.fallback_policy.service_unavailable(decision.language),
+                content=self.fallback_policy.service_unavailable(),
                 intent=decision.intent,
                 language=decision.language,
                 sources=[],
+                outcome_code="unavailable",
             )
 
         if not results:
             if decision.intent == Intent.INVALID:
-                content = self.fallback_policy.invalid(decision.language)
-            elif not active_settings.get("strict_grounding", True):
-                content = self.generate_with_fallback(
-                    build_general_prompt(
+                return ChatOutcome(
+                    content=self.fallback_policy.invalid(),
+                    intent=decision.intent,
+                    language=decision.language,
+                    sources=[],
+                    outcome_code="unsupported",
+                )
+            if not active_settings.get("strict_grounding", True):
+                return PreparedRAGAnswer(
+                    prompt_messages=build_general_prompt(
                         decision.language,
                         query.messages,
                         system_prompt=system_prompt,
                         settings=active_settings,
                     ),
-                    self.fallback_policy.no_docs(decision.language),
+                    fallback_text=self.fallback_policy.no_docs(),
+                    intent=decision.intent,
+                    language=decision.language,
+                    sources=[],
+                    outcome_code="general",
                 )
-            else:
-                content = self.fallback_policy.no_docs(decision.language)
             return ChatOutcome(
-                content=content,
+                content=self.fallback_policy.no_docs(),
                 intent=decision.intent,
                 language=decision.language,
                 sources=[],
+                outcome_code="no_match",
             )
 
         fallback_text = self._build_extractive_fallback(
-            decision.language,
             latest_user.content,
             results,
-        )
-        content = self.generate_with_fallback(
-            build_rag_prompt(
-                decision.language,
-                query.messages,
-                results,
-                system_prompt=system_prompt,
-                settings=active_settings,
-            ),
-            fallback_text,
         )
         sources = [
             RetrievedChunk(
@@ -133,11 +165,19 @@ class RAGService:
             )
             for result in results
         ]
-        return ChatOutcome(
-            content=content,
+        return PreparedRAGAnswer(
+            prompt_messages=build_rag_prompt(
+                decision.language,
+                query.messages,
+                results,
+                system_prompt=system_prompt,
+                settings=active_settings,
+            ),
+            fallback_text=fallback_text,
             intent=Intent.WORK,
             language=decision.language,
             sources=sources,
+            outcome_code="grounded",
         )
 
     def generate_with_fallback(self, prompt_messages: list[dict], fallback_text: str) -> str:
@@ -149,7 +189,6 @@ class RAGService:
 
     def _build_extractive_fallback(
         self,
-        language: str,
         query_text: str,
         results: list[dict],
     ) -> str:
@@ -157,8 +196,8 @@ class RAGService:
         if faq_answer:
             return faq_answer
 
-        keywords = self.document_service._extract_keywords(query_text)
-        candidates: list[tuple[int, float, str]] = []
+        keywords = extract_keywords(query_text)
+        candidates: list[tuple[int, int, str]] = []
         seen: set[str] = set()
         normalized_query = self._normalize_sentence(query_text)
 
@@ -190,7 +229,7 @@ class RAGService:
         if candidates:
             candidates.sort(key=lambda item: (-item[0], item[1]))
             return "\n".join(item[2] for item in candidates[:2])
-        return self.fallback_policy.no_docs(language)
+        return self.fallback_policy.no_docs()
 
     def _extract_direct_answer(self, query_text: str, results: list[dict]) -> str:
         lowered_query = (query_text or "").strip().lower()
@@ -236,17 +275,8 @@ class RAGService:
             "Audience Note:",
             "Related Documents:",
             "Frequently Asked Questions",
-            "Pacific Beacon Software, Inc.",
         )
         if not cleaned or any(fragment.lower() in cleaned.lower() for fragment in bad_fragments):
-            return ""
-        bad_starts = (
-            "A typical operating example is this",
-            "This topic works best when",
-            "The company uses structured approvals",
-            "Pacific Beacon treats",
-        )
-        if any(cleaned.startswith(fragment) for fragment in bad_starts):
             return ""
         if cleaned.endswith("?"):
             return ""

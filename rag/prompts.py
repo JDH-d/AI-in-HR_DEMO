@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import List
-
-from core.settings import SYSTEM_PROMPT_PATH
+MAX_CONTEXT_MESSAGES = 8
+MAX_CONTEXT_CHARS = 12_000
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a professional internal knowledge and workflow assistant for a company demo. "
@@ -12,30 +10,13 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 
-def load_system_prompt() -> str:
-    path = Path(SYSTEM_PROMPT_PATH)
-    try:
-        content = path.read_text(encoding="utf-8").strip()
-        if content:
-            return content
-    except FileNotFoundError:
-        pass
-    return DEFAULT_SYSTEM_PROMPT
-
-
-def save_system_prompt(text: str) -> None:
-    path = Path(SYSTEM_PROMPT_PATH)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text.strip(), encoding="utf-8")
-
-
 def build_rag_prompt(
     language: str,
-    messages: List[object],
-    sources: List[dict],
+    messages: list[object],
+    sources: list[dict],
     system_prompt: str | None = None,
     settings: dict[str, bool] | None = None,
-) -> List[dict]:
+) -> list[dict]:
     strict = (settings or {}).get("strict_grounding", True)
     grounding_instruction = (
         "Answer strictly and only using the provided SOURCES. "
@@ -54,30 +35,30 @@ def build_rag_prompt(
         label = f"{source['title']} — {source['section']} (version {source['version']})"
         sources_text.append(f"[{label}]\n{source['text']}")
     sources_block = "\n\n".join(sources_text)
-    last_user = next((m for m in reversed(messages) if m.role == "user"), None)
-    question = last_user.content if last_user else ""
-    user = f"SOURCES:\n{sources_block}\n\nQUESTION:\n{question}"
-    return _messages_to_input(
-        [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    )
+    conversation = _recent_conversation(messages)
+    for message in reversed(conversation):
+        if message["role"] == "user":
+            message["content"] = (
+                f"SOURCES:\n{sources_block}\n\nCURRENT QUESTION:\n{message['content']}"
+            )
+            break
+    return _messages_to_input([{"role": "system", "content": system}, *conversation])
 
 
 def build_general_prompt(
     language: str,
-    messages: List[object],
+    messages: list[object],
     system_prompt: str | None = None,
     settings: dict[str, bool] | None = None,
-) -> List[dict]:
+) -> list[dict]:
     system = _compose_system_prompt(
         language,
         "No internal source matched this question. Give general workplace guidance only, explicitly state that it is not confirmed company policy, and recommend checking with HR when policy-specific details matter.",
         base_prompt=system_prompt,
         settings=settings,
     )
-    last_user = next((message for message in reversed(messages) if message.role == "user"), None)
-    question = last_user.content if last_user else ""
     return _messages_to_input(
-        [{"role": "system", "content": system}, {"role": "user", "content": question}]
+        [{"role": "system", "content": system}, *_recent_conversation(messages)]
     )
 
 
@@ -87,11 +68,12 @@ def _compose_system_prompt(
     base_prompt: str | None = None,
     settings: dict[str, bool] | None = None,
 ) -> str:
-    base = (base_prompt or load_system_prompt() or DEFAULT_SYSTEM_PROMPT).strip()
+    base = (base_prompt or DEFAULT_SYSTEM_PROMPT).strip()
     if not base.endswith((".", "!", "?")):
         base = f"{base}."
     behavior = _behavior_instructions(settings or {})
-    return f"{base} Reply in English. {behavior} {extra}".strip()
+    reply_language = "English" if language == "en" else language
+    return f"{base} Reply in {reply_language}. {behavior} {extra}".strip()
 
 
 def _behavior_instructions(settings: dict[str, bool]) -> str:
@@ -107,8 +89,8 @@ def _behavior_instructions(settings: dict[str, bool]) -> str:
     return " ".join(instructions)
 
 
-def _messages_to_input(messages: List[dict]) -> List[dict]:
-    out: List[dict] = []
+def _messages_to_input(messages: list[dict]) -> list[dict]:
+    out: list[dict] = []
     for message in messages:
         out.append(
             {
@@ -117,3 +99,15 @@ def _messages_to_input(messages: List[dict]) -> List[dict]:
             }
         )
     return out
+
+
+def _recent_conversation(messages: list[object]) -> list[dict[str, str]]:
+    conversation = [
+        {"role": message.role, "content": str(message.content).strip()}
+        for message in messages
+        if getattr(message, "role", None) in {"user", "assistant"}
+        and str(getattr(message, "content", "")).strip()
+    ][-MAX_CONTEXT_MESSAGES:]
+    while conversation and sum(len(item["content"]) for item in conversation) > MAX_CONTEXT_CHARS:
+        conversation.pop(0)
+    return conversation
