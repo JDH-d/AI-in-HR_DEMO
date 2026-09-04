@@ -7,10 +7,11 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from api.schemas import ChatResponse, Message
-from api.v1_routes import _unanswered_entries
+from api.v1_routes import _stream_chat_response, _unanswered_entries
 from app import app
 from core import settings
 from services.ai_settings_service import AISettingsService
+from services.conversation_service import ConversationService
 from services.document_service import DocumentService
 
 
@@ -27,6 +28,9 @@ class APIV1ContractTests(unittest.TestCase):
         expected = {
             ("POST", "/api/v1/chat"),
             ("POST", "/api/v1/chat/stream"),
+            ("GET", "/api/v1/conversations"),
+            ("POST", "/api/v1/conversations"),
+            ("GET", "/api/v1/conversations/{conversation_id}"),
             ("GET", "/api/v1/me"),
             ("GET", "/api/v1/requests"),
             ("POST", "/api/v1/requests"),
@@ -34,6 +38,7 @@ class APIV1ContractTests(unittest.TestCase):
             ("POST", "/api/v1/requests/{request_id}/submit"),
             ("POST", "/api/v1/requests/{request_id}/approve"),
             ("POST", "/api/v1/requests/{request_id}/decline"),
+            ("POST", "/api/v1/requests/{request_id}/acknowledge"),
             ("GET", "/api/v1/documents"),
             ("POST", "/api/v1/documents"),
             ("GET", "/api/v1/documents/{document_id}/download"),
@@ -99,6 +104,54 @@ class APIV1ContractTests(unittest.TestCase):
         self.assertEqual(events[0]["type"], "start")
         self.assertTrue(any(event["type"] == "token" for event in events))
         self.assertEqual(events[-1]["type"], "complete")
+
+    def test_chat_stream_preserves_answer_whitespace(self) -> None:
+        content = "Available topics:\n\n1. PTO and leave\n2. Salary and payroll"
+        response = ChatResponse(
+            message=Message(role="assistant", content=content),
+            intent="work",
+            language="en",
+            sources=[],
+        )
+
+        events = [json.loads(line) for line in _stream_chat_response(response)]
+        streamed_content = "".join(event["content"] for event in events if event["type"] == "token")
+
+        self.assertEqual(streamed_content, content)
+
+    def test_employee_conversation_history_round_trips_through_streaming_chat(self) -> None:
+        temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        service = ConversationService(temp_dir / "history.db")
+        headers = self._headers("employee")
+        try:
+            with patch("api.v1_routes.conversation_service", service):
+                created = self.client.post("/api/v1/conversations", headers=headers)
+                conversation_id = created.json()["conversation"]["id"]
+                streamed = self.client.post(
+                    "/api/v1/chat/stream",
+                    headers=headers,
+                    json={
+                        "conversation_id": conversation_id,
+                        "messages": [{"role": "user", "content": "What can you help with?"}],
+                    },
+                )
+                listed = self.client.get("/api/v1/conversations", headers=headers)
+                detail = self.client.get(
+                    f"/api/v1/conversations/{conversation_id}",
+                    headers=headers,
+                )
+
+            self.assertEqual(created.status_code, 201)
+            self.assertEqual(streamed.status_code, 200)
+            self.assertEqual(listed.json()["conversations"][0]["id"], conversation_id)
+            self.assertEqual(
+                [message["role"] for message in detail.json()["messages"]],
+                ["user", "assistant"],
+            )
+            self.assertEqual(detail.json()["messages"][0]["content"], "What can you help with?")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def test_document_routes_are_restricted_to_knowledge_admin(self) -> None:
         temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName

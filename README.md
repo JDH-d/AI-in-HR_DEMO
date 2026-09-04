@@ -13,11 +13,13 @@ The demo is built around HR and IT policies because they are easy to understand 
 ## Features
 
 - Employee-facing AI chat with streaming answers
+- Persistent, user-scoped conversation history that survives reloads
 - Retrieval-augmented generation over internal documents
 - Source citations with document title, section, category, version, and highlighted evidence
-- Safe workflow creation for PTO, sick leave, and document requests
+- Purpose-built workflows for PTO approval and sick leave reporting
+- Privacy-minded sick leave reporting with unknown-return support and manager acknowledgement
 - Confirmation drawer before a request is sent for review
-- Manager inbox with filters, counters, approval/decline actions, comments, and status timeline
+- Manager inbox with filters, counters, decisions, sick leave acknowledgement, comments, and status timeline
 - Knowledge Admin source library with document upload, download, deletion, indexing, and health metrics
 - Unified Quality queue for anonymized feedback and genuine document knowledge gaps
 - Six focused AI controls, editable system prompt, and a side-effect-free test request preview
@@ -27,7 +29,7 @@ The demo is built around HR and IT policies because they are easy to understand 
 
 ## Business Value
 
-Internal teams repeatedly answer the same operational questions: policies, benefits, access requests, schedules, onboarding, compliance rules, safety procedures, and document requests.
+Internal teams repeatedly answer the same operational questions: policies, benefits, access requests, schedules, onboarding, compliance rules, safety procedures, and document lookups.
 
 This project demonstrates a practical internal assistant that does more than generate text:
 
@@ -44,7 +46,7 @@ For a business reviewer, the value proposition is simple: reduce repetitive inte
 | Surface | Route | Purpose |
 |---------|-------|---------|
 | Employee Workspace | `/employee` | Ask policy questions, review sources, create confirmed workflow requests, send feedback. |
-| Manager Inbox | `/manager` | Review incoming requests, approve/decline, leave comments, inspect timeline history. |
+| Manager Inbox | `/manager` | Review incoming requests, decide PTO, acknowledge sick leave, leave comments, and inspect timeline history. |
 | Knowledge Admin | `/knowledge` | Maintain source documents, work the unified Quality queue, monitor metrics, and safely test AI settings before applying them. |
 | API Docs | `/docs` | Inspect and test the FastAPI contract. |
 
@@ -197,11 +199,12 @@ The app reads configuration from environment variables via `.env`.
 - Employee, Manager, and Knowledge Admin sign in with predefined demo identities.
 - Login returns an expiring signed Bearer token.
 - The React UI communicates with the versioned `/api/v1` backend.
+- Employee conversations and their grounded answer context are restored from SQLite.
 - `ChatService` classifies the message as a policy question, workflow action, or general assistant request.
 - Policy questions go through the RAG layer, which retrieves relevant chunks from documents and sends grounded context to the model.
 - Action-oriented messages prepare workflow drafts, but a request is created only after explicit confirmation.
 - Workflow transitions are protected: invalid status changes are rejected, and every meaningful change is written to `request_events`.
-- Managers can approve, decline with a required comment, add comments, and inspect the full timeline.
+- Managers can approve PTO, decline with a required comment, acknowledge sick leave reports, add comments, and inspect the full timeline.
 - Knowledge Admins can upload, download, delete, and index documents; investigate anonymized rated conversations and genuine knowledge gaps in one Quality queue; and preview unsaved AI settings without creating requests or analytics noise.
 
 ## Architecture
@@ -211,12 +214,14 @@ flowchart LR
     React["React UI<br/>Employee / Manager / Knowledge Admin"] --> API["FastAPI /api/v1"]
     API --> Auth["Signed demo identity"]
     API --> Chat["ChatService"]
+    API --> Conversations["Conversation service"]
     Chat --> Intent["Intent detection"]
     Chat --> RAG["RAG retrieval"]
     Chat --> Workflow["Workflow service"]
     RAG --> Docs["documents/"]
     RAG --> Index["Local index"]
     Workflow --> SQLite["SQLite workflow.db"]
+    Conversations --> SQLite
     API --> Metrics["Admin metrics"]
     API --> Feedback["Feedback"]
 ```
@@ -233,12 +238,16 @@ Core routes:
 - `GET /api/v1/me`
 - `POST /api/v1/chat`
 - `POST /api/v1/chat/stream`
+- `GET /api/v1/conversations`
+- `POST /api/v1/conversations`
+- `GET /api/v1/conversations/{id}`
 - `GET /api/v1/requests`
 - `POST /api/v1/requests`
 - `GET /api/v1/requests/{id}`
 - `POST /api/v1/requests/{id}/submit`
 - `POST /api/v1/requests/{id}/approve`
 - `POST /api/v1/requests/{id}/decline`
+- `POST /api/v1/requests/{id}/acknowledge`
 - `GET /api/v1/documents`
 - `POST /api/v1/documents`
 - `GET /api/v1/documents/{id}/download`
@@ -263,6 +272,7 @@ Full API notes are available in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).
 - Can I request partial-day PTO?
 - How do I request VPN access?
 - I need vacation from 2030-04-10 to 2030-04-12
+- I need sick leave tomorrow
 
 ## Demo Flow
 
@@ -273,7 +283,9 @@ Full API notes are available in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).
 5. Ask for vacation from `2030-04-10` to `2030-04-12`.
 6. Review the prefilled drawer and submit the request.
 7. Sign in as `manager`, open the request marked `in review`, and approve or decline it.
-8. Sign in as `knowledge_admin`, maintain the source library, and review anonymized positive and negative answer feedback.
+8. Return as `employee`, report sick leave, and show that no diagnosis or approval is requested.
+9. Sign in as `manager` and acknowledge the sick leave report.
+10. Sign in as `knowledge_admin`, maintain the source library, and review anonymized positive and negative answer feedback.
 
 Detailed scripts are available in [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md).
 
@@ -370,7 +382,8 @@ The Docker target is intentionally API-only. `run_demo.ps1` starts the API and t
 ## Privacy & Data Handling
 
 - Source documents are stored locally in `documents/`.
-- Workflow requests, audit events, manager comments, users, and feedback are stored in local SQLite.
+- Conversations, workflow requests, audit events, manager comments, users, and feedback are stored in local SQLite.
+- Conversation history stores the full employee and assistant messages locally so chats can be restored exactly.
 - Chat logs are written to JSONL and can mask, store, or omit user text via `LOG_USER_TEXT_MODE`.
 - When using OpenAI models, user questions and retrieved excerpts may be sent to the OpenAI API.
 - Do not use sensitive production data in this MVP unless your data handling policies allow it.

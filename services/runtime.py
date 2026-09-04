@@ -6,11 +6,13 @@ from workflow import WorkflowService
 from .ai_settings_service import AISettingsService
 from .auth_service import DemoAuthService
 from .chat_service import ChatService
+from .conversation_service import ConversationService
 from .document_service import DocumentService
 from .llm_service import LLMService
 from .log_service import ChatLogService
 
 workflow_service = WorkflowService(str(settings.WORKFLOW_DB))
+conversation_service = ConversationService(workflow_service.store.db_path)
 ai_settings_service = AISettingsService(settings.AI_SETTINGS_PATH)
 auth_service = DemoAuthService(
     secret=settings.DEMO_AUTH_SECRET,

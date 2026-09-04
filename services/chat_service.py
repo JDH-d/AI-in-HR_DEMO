@@ -141,6 +141,13 @@ class ChatService:
         latest_user = query.latest_user_message
         assert latest_user is not None
 
+        if self._is_hr_support_request(latest_user.content):
+            return ChatOutcome(
+                content=self.fallback_policy.hr_support(decision.language),
+                intent=Intent.WORK,
+                language=decision.language,
+            )
+
         workflow_request = (
             self.workflow_service.prepare_draft(
                 latest_user.content,
@@ -216,6 +223,17 @@ class ChatService:
             "what about that",
             "how does that work",
             "can you elaborate",
+        }
+
+    @staticmethod
+    def _is_hr_support_request(text: str) -> bool:
+        normalized = " ".join((text or "").lower().split()).strip(" ?.!")
+        return normalized in {
+            "ask hr",
+            "contact hr",
+            "i need help from hr",
+            "i need to speak with hr",
+            "i want to talk to hr",
         }
 
     def _log_outcome(self, user_text: str, outcome: ChatOutcome) -> None:

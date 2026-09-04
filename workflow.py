@@ -10,17 +10,22 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
-VALID_TYPES = {"pto", "sick_leave", "document"}
+SUPPORTED_REQUEST_TYPES = ("pto", "sick_leave")
+VALID_TYPES = frozenset(SUPPORTED_REQUEST_TYPES)
 VALID_STATUSES = {
     "draft",
     "in_review",
+    "reported",
+    "acknowledged",
     "approved",
     "declined",
     "cancelled",
 }
 ALLOWED_TRANSITIONS = {
-    "draft": {"in_review", "cancelled"},
+    "draft": {"in_review", "reported", "cancelled"},
     "in_review": {"approved", "declined", "cancelled"},
+    "reported": {"acknowledged", "cancelled"},
+    "acknowledged": set(),
     "approved": set(),
     "declined": set(),
     "cancelled": set(),
@@ -29,7 +34,6 @@ ALLOWED_TRANSITIONS = {
 _TYPE_LABELS = {
     "pto": "PTO",
     "sick_leave": "Sick leave",
-    "document": "Document",
 }
 _TYPE_TERMS = {
     "sick_leave": ("sick leave", "sick day", "calling in sick", "call in sick"),
@@ -41,14 +45,6 @@ _TYPE_TERMS = {
         "personal leave",
         "leave request",
         " leave ",
-    ),
-    "document": (
-        "document request",
-        "employment letter",
-        "employment certificate",
-        "certificate",
-        "letter",
-        "document",
     ),
 }
 _ACTION_PHRASES = (
@@ -136,6 +132,7 @@ class WorkflowDraftData:
     comment: str
     applicant: str
     approver: str
+    details: dict[str, object] = field(default_factory=dict)
     validation_errors: list[str] = field(default_factory=list)
 
 
@@ -155,17 +152,78 @@ def _duration_days(start_date: str | None, end_date: str | None) -> int | None:
     return (end - start).days + 1
 
 
+def _default_sick_leave_details(
+    start_date: str | None,
+    end_date: str | None,
+) -> dict[str, object]:
+    expected_return_date: str | None = None
+    if start_date:
+        try:
+            last_day_away = date.fromisoformat(end_date or start_date)
+            expected_return_date = (last_day_away + timedelta(days=1)).isoformat()
+        except ValueError:
+            pass
+    return {
+        "expected_return_date": expected_return_date,
+        "expected_return_unknown": expected_return_date is None,
+        "time_away": "full_day",
+        "partial_hours": None,
+        "extended_or_recurring": False,
+    }
+
+
+def _normalize_request_details(
+    request_type: str,
+    details: dict[str, object] | None,
+) -> dict[str, object]:
+    if request_type != "sick_leave":
+        return {}
+    source = details or {}
+    return_unknown = source.get("expected_return_unknown") is True
+    return {
+        "expected_return_date": (
+            None if return_unknown else _optional_string(source.get("expected_return_date"))
+        ),
+        "expected_return_unknown": return_unknown,
+        "time_away": source.get("time_away"),
+        "partial_hours": source.get("partial_hours"),
+        "extended_or_recurring": source.get("extended_or_recurring") is True,
+    }
+
+
+def _request_end_date(
+    request_type: str,
+    start_date: str | None,
+    end_date: str | None,
+    details: dict[str, object],
+) -> str | None:
+    if request_type != "sick_leave":
+        return end_date
+    if details.get("expected_return_unknown") is True:
+        return None
+    expected_return = _optional_string(details.get("expected_return_date"))
+    if not start_date or not expected_return:
+        return end_date
+    try:
+        start = date.fromisoformat(start_date)
+        last_day_away = date.fromisoformat(expected_return) - timedelta(days=1)
+    except ValueError:
+        return end_date
+    return max(start, last_day_away).isoformat()
+
+
 def validate_request_fields(
     request_type: str,
     start_date: str | None,
     end_date: str | None,
     comment: str,
     approver: str,
+    details: dict[str, object] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if request_type not in VALID_TYPES:
         errors.append("Request type is not supported.")
-    if not comment.strip():
+    if request_type != "sick_leave" and not comment.strip():
         errors.append("Comment is required.")
     if not approver.strip():
         errors.append("Approver is required.")
@@ -174,7 +232,10 @@ def validate_request_fields(
     parsed_end: date | None = None
     for field_name, value in (("Start date", start_date), ("End date", end_date)):
         if not value:
-            if request_type in {"pto", "sick_leave"}:
+            required = request_type == "pto" or (
+                request_type == "sick_leave" and field_name == "Start date"
+            )
+            if required:
                 errors.append(f"{field_name} is required.")
             continue
         try:
@@ -189,6 +250,39 @@ def validate_request_fields(
 
     if parsed_start and parsed_end and parsed_end < parsed_start:
         errors.append("End date cannot be earlier than start date.")
+
+    if request_type == "sick_leave":
+        sick_details = details or {}
+        time_away = sick_details.get("time_away")
+        if time_away not in ("full_day", "partial_day"):
+            errors.append("Choose whether you will be away for a full or partial day.")
+
+        expected_return_unknown = sick_details.get("expected_return_unknown") is True
+        expected_return_value = _optional_string(sick_details.get("expected_return_date"))
+        expected_return: date | None = None
+        if not expected_return_unknown and not expected_return_value:
+            errors.append("Choose an expected return date or select Not sure yet.")
+        if expected_return_value:
+            try:
+                expected_return = date.fromisoformat(expected_return_value)
+            except ValueError:
+                errors.append("Expected return must be a real calendar date in YYYY-MM-DD format.")
+
+        if parsed_start and expected_return:
+            if time_away == "full_day" and expected_return <= parsed_start:
+                errors.append("Expected return must be after the first full day away.")
+            if time_away == "partial_day" and expected_return < parsed_start:
+                errors.append("Expected return cannot be before the first day away.")
+
+        partial_hours = sick_details.get("partial_hours")
+        if time_away == "partial_day":
+            valid_hours = (
+                isinstance(partial_hours, (int, float))
+                and not isinstance(partial_hours, bool)
+                and 0 < partial_hours <= 24
+            )
+            if not valid_hours:
+                errors.append("Partial-day hours must be greater than 0 and no more than 24.")
     return errors
 
 
@@ -208,21 +302,30 @@ class WorkflowInterpreter:
             return None
 
         start_date, end_date, date_errors = self._extract_dates(text)
-        approver = "HR" if request_type == "document" else "Manager"
+        approver = "Manager"
+        details = (
+            _default_sick_leave_details(start_date, end_date)
+            if request_type == "sick_leave"
+            else {}
+        )
+        comment = "" if request_type == "sick_leave" else text.strip()
+        end_date = _request_end_date(request_type, start_date, end_date, details)
         errors = date_errors + validate_request_fields(
             request_type=request_type,
             start_date=start_date,
             end_date=end_date,
-            comment=text,
+            comment=comment,
             approver=approver,
+            details=details,
         )
         return WorkflowDraftData(
             request_type=request_type,
             start_date=start_date,
             end_date=end_date,
-            comment=text.strip(),
+            comment=comment,
             applicant=_normalize_user(applicant, "anonymous"),
             approver=approver,
+            details=details,
             validation_errors=list(dict.fromkeys(errors)),
         )
 
@@ -330,6 +433,7 @@ class WorkflowStore:
                     comment TEXT NOT NULL,
                     applicant TEXT NOT NULL,
                     approver TEXT NOT NULL,
+                    details TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -390,6 +494,14 @@ class WorkflowStore:
                     ON request_comments(request_id, created_at);
                 """
             )
+            request_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(workflow_requests)").fetchall()
+            }
+            if "details" not in request_columns:
+                conn.execute(
+                    "ALTER TABLE workflow_requests ADD COLUMN details TEXT NOT NULL DEFAULT '{}'"
+                )
             if legacy_table:
                 self._migrate_legacy_rows(conn, legacy_table)
             if schema_version < 3:
@@ -428,6 +540,36 @@ class WorkflowStore:
                       AND to_status = 'approved'
                     """
                 )
+            if schema_version < 7:
+                conn.execute(
+                    """
+                    UPDATE request_events
+                    SET from_status = 'reported'
+                    WHERE from_status = 'in_review'
+                      AND request_id IN (
+                          SELECT id FROM workflow_requests
+                          WHERE type = 'sick_leave' AND status = 'in_review'
+                      )
+                    """
+                )
+                conn.execute(
+                    """
+                    UPDATE request_events
+                    SET to_status = 'reported'
+                    WHERE to_status = 'in_review'
+                      AND request_id IN (
+                          SELECT id FROM workflow_requests
+                          WHERE type = 'sick_leave' AND status = 'in_review'
+                      )
+                    """
+                )
+                conn.execute(
+                    """
+                    UPDATE workflow_requests
+                    SET status = 'reported'
+                    WHERE type = 'sick_leave' AND status = 'in_review'
+                    """
+                )
             assistant_feedback_columns = {
                 row["name"]
                 for row in conn.execute("PRAGMA table_info(assistant_feedback)").fetchall()
@@ -436,7 +578,7 @@ class WorkflowStore:
                 conn.execute(
                     "ALTER TABLE assistant_feedback ADD COLUMN answer TEXT NOT NULL DEFAULT ''"
                 )
-            conn.execute("PRAGMA user_version = 6")
+            conn.execute("PRAGMA user_version = 7")
             conn.commit()
 
     @staticmethod
@@ -469,8 +611,10 @@ class WorkflowStore:
             request_type = {
                 "pto": "pto",
                 "sick": "sick_leave",
-                "document": "document",
-            }.get(str(data.get("type", "")).lower(), "document")
+                "sick_leave": "sick_leave",
+            }.get(str(data.get("type", "")).lower())
+            if request_type is None:
+                continue
             applicant = _normalize_user(data.get("created_by"), "anonymous")
             approver = _normalize_user(data.get("assigned_to"), "Manager")
             created_at = data.get("created_at") or _utc_now()
@@ -481,8 +625,8 @@ class WorkflowStore:
                 """
                 INSERT INTO workflow_requests
                 (id, type, start_date, end_date, duration_days, comment, applicant, approver,
-                 status, created_at, updated_at)
-                VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)
+                 details, status, created_at, updated_at)
+                VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, '{}', ?, ?, ?)
                 """,
                 (
                     data["id"],
@@ -569,8 +713,8 @@ class WorkflowStore:
                 """
                 INSERT INTO workflow_requests
                 (id, type, start_date, end_date, duration_days, comment, applicant, approver,
-                 status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+                 details, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
                 """,
                 (
                     request_id,
@@ -581,6 +725,7 @@ class WorkflowStore:
                     draft.comment,
                     draft.applicant,
                     draft.approver,
+                    json.dumps(draft.details, ensure_ascii=False),
                     created_at,
                     created_at,
                 ),
@@ -603,7 +748,11 @@ class WorkflowStore:
     def get_request(self, request_id: str) -> dict | None:
         with closing(self._connect()) as conn:
             row = conn.execute(
-                "SELECT * FROM workflow_requests WHERE id = ?", (request_id,)
+                """
+                SELECT * FROM workflow_requests
+                WHERE id = ? AND type IN (?, ?)
+                """,
+                (request_id, *SUPPORTED_REQUEST_TYPES),
             ).fetchone()
         return _request_row_to_dict(row) if row else None
 
@@ -612,10 +761,10 @@ class WorkflowStore:
             rows = conn.execute(
                 """
                 SELECT * FROM workflow_requests
-                WHERE applicant = ?
+                WHERE applicant = ? AND type IN (?, ?)
                 ORDER BY created_at DESC
                 """,
-                (_normalize_user(applicant, "anonymous"),),
+                (_normalize_user(applicant, "anonymous"), *SUPPORTED_REQUEST_TYPES),
             ).fetchall()
         return [_request_row_to_dict(row) for row in rows]
 
@@ -623,8 +772,12 @@ class WorkflowStore:
         bounded = max(1, min(limit, 1000))
         with closing(self._connect()) as conn:
             rows = conn.execute(
-                "SELECT * FROM workflow_requests ORDER BY created_at DESC LIMIT ?",
-                (bounded,),
+                """
+                SELECT * FROM workflow_requests
+                WHERE type IN (?, ?)
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (*SUPPORTED_REQUEST_TYPES, bounded),
             ).fetchall()
         return [_request_row_to_dict(row) for row in rows]
 
@@ -639,24 +792,37 @@ class WorkflowStore:
             if row["applicant"] != actor:
                 raise WorkflowPermissionError("Only the applicant can submit this draft.")
             if row["status"] != "draft":
-                raise InvalidTransitionError(row["status"], "in_review")
+                target = "reported" if row["type"] == "sick_leave" else "in_review"
+                raise InvalidTransitionError(row["status"], target)
 
             request_type = str(fields.get("type") or row["type"]).strip().lower()
             start_date = _optional_string(fields.get("start_date", row["start_date"]))
             end_date = _optional_string(fields.get("end_date", row["end_date"]))
             comment = str(fields.get("comment", row["comment"])).strip()
             approver = str(fields.get("approver", row["approver"])).strip()
-            errors = validate_request_fields(request_type, start_date, end_date, comment, approver)
+            current_details = _load_json_object(row["details"])
+            details_value = fields["details"] if "details" in fields else current_details
+            details = _normalize_request_details(request_type, details_value)
+            end_date = _request_end_date(request_type, start_date, end_date, details)
+            errors = validate_request_fields(
+                request_type,
+                start_date,
+                end_date,
+                comment,
+                approver,
+                details,
+            )
             if errors:
                 raise WorkflowValidationError(errors)
             duration = _duration_days(start_date, end_date)
+            target_status = "reported" if request_type == "sick_leave" else "in_review"
             now = _utc_now()
             self._ensure_user(conn, approver, "approver")
             conn.execute(
                 """
                 UPDATE workflow_requests
                 SET type = ?, start_date = ?, end_date = ?, duration_days = ?, comment = ?,
-                    approver = ?, status = 'in_review', updated_at = ?
+                    approver = ?, details = ?, status = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -666,6 +832,8 @@ class WorkflowStore:
                     duration,
                     comment,
                     approver,
+                    json.dumps(details, ensure_ascii=False),
+                    target_status,
                     now,
                     request_id,
                 ),
@@ -675,7 +843,7 @@ class WorkflowStore:
                 request_id,
                 "status_changed",
                 "draft",
-                "in_review",
+                target_status,
                 actor,
                 {"confirmed_fields": True},
             )
@@ -810,17 +978,30 @@ class WorkflowStore:
 
     def metrics(self) -> dict:
         with closing(self._connect()) as conn:
-            total_requests = conn.execute("SELECT COUNT(*) FROM workflow_requests").fetchone()[0]
+            total_requests = conn.execute(
+                "SELECT COUNT(*) FROM workflow_requests WHERE type IN (?, ?)",
+                SUPPORTED_REQUEST_TYPES,
+            ).fetchone()[0]
             by_status = {
                 row["status"]: row["count"]
                 for row in conn.execute(
-                    "SELECT status, COUNT(*) AS count FROM workflow_requests GROUP BY status"
+                    """
+                    SELECT status, COUNT(*) AS count FROM workflow_requests
+                    WHERE type IN (?, ?)
+                    GROUP BY status
+                    """,
+                    SUPPORTED_REQUEST_TYPES,
                 ).fetchall()
             }
             by_type = {
                 row["type"]: row["count"]
                 for row in conn.execute(
-                    "SELECT type, COUNT(*) AS count FROM workflow_requests GROUP BY type"
+                    """
+                    SELECT type, COUNT(*) AS count FROM workflow_requests
+                    WHERE type IN (?, ?)
+                    GROUP BY type
+                    """,
+                    SUPPORTED_REQUEST_TYPES,
                 ).fetchall()
             }
             counts = {}
@@ -945,7 +1126,13 @@ class WorkflowStore:
 
     @staticmethod
     def _require_request(conn: sqlite3.Connection, request_id: str) -> sqlite3.Row:
-        row = conn.execute("SELECT * FROM workflow_requests WHERE id = ?", (request_id,)).fetchone()
+        row = conn.execute(
+            """
+            SELECT * FROM workflow_requests
+            WHERE id = ? AND type IN (?, ?)
+            """,
+            (request_id, *SUPPORTED_REQUEST_TYPES),
+        ).fetchone()
         if not row:
             raise WorkflowNotFoundError("The workflow request could not be found.")
         return row
@@ -975,24 +1162,35 @@ class WorkflowService:
         comment: str,
         applicant: str,
         approver: str,
+        details: dict[str, object] | None = None,
     ) -> dict:
-        errors = validate_request_fields(
-            request_type,
+        normalized_type = request_type.strip().lower()
+        normalized_details = _normalize_request_details(normalized_type, details)
+        normalized_end = _request_end_date(
+            normalized_type,
             start_date,
             end_date,
+            normalized_details,
+        )
+        errors = validate_request_fields(
+            normalized_type,
+            start_date,
+            normalized_end,
             comment,
             approver,
+            normalized_details,
         )
         if errors:
             raise WorkflowValidationError(errors)
         return self.store.create_draft(
             WorkflowDraftData(
-                request_type=request_type,
+                request_type=normalized_type,
                 start_date=start_date,
-                end_date=end_date,
+                end_date=normalized_end,
                 comment=comment.strip(),
                 applicant=_normalize_user(applicant, "anonymous"),
                 approver=_normalize_user(approver, "manager.demo"),
+                details=normalized_details,
             )
         )
 
@@ -1091,6 +1289,14 @@ def _optional_string(value: object) -> str | None:
     return cleaned or None
 
 
+def _load_json_object(value: object) -> dict[str, object]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _request_row_to_dict(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
@@ -1102,6 +1308,7 @@ def _request_row_to_dict(row: sqlite3.Row) -> dict:
         "comment": row["comment"],
         "applicant": row["applicant"],
         "approver": row["approver"],
+        "details": _load_json_object(row["details"]),
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

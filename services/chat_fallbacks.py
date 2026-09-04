@@ -17,6 +17,12 @@ class ChatFallbackPolicy:
     def small_talk(self, language: str) -> str:
         return "Hello. I can help with PTO and leave, payroll, benefits, schedules, or IT support."
 
+    def hr_support(self, language: str) -> str:
+        return (
+            "I’ve opened a private HR support request for you. An HR partner will review it "
+            "and follow up here. You can add any helpful context in this conversation."
+        )
+
     def topic_selection(self, language: str, topic: str) -> str:
         examples = self._format_topic_examples(topic)
         return f"You selected {topic}. What would you like to know?\nExamples:\n{examples}"

@@ -7,8 +7,9 @@
 4. Ask: `How far in advance should I request vacation?`
 5. Ask: `Can I request partial-day PTO?`
 6. Prepare a request: `I need vacation from 2030-04-10 to 2030-04-12`
-7. Review the extracted fields and click **Confirm and submit**.
-8. Open **My Requests** and show the status history.
+7. Prepare a sick leave report: `I need sick leave tomorrow`
+8. Review the extracted fields and submit or report the draft.
+9. Open **My Requests** and show the status history.
 
 ## Manager Flow
 1. Ask: `How do schedule changes work?`
@@ -18,7 +19,7 @@
 
 ## Admin Flow
 1. Open the React application and choose an administration role.
-2. Sign in as `manager`, load requests, and approve or decline one.
+2. Sign in as `manager`, load requests, approve or decline PTO, and acknowledge sick leave.
 3. Add a manager comment and show the event history.
 4. Sign out and sign in as `knowledge_admin`.
 5. Refresh metrics and the document list.

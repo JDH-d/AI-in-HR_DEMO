@@ -26,6 +26,10 @@ identities. `X-User` and arbitrary user IDs are not accepted.
 | `GET` | `/api/v1/health` | Public |
 | `POST` | `/api/v1/auth/login` | Public |
 | `POST` | `/api/v1/chat` | Authenticated |
+| `POST` | `/api/v1/chat/stream` | Authenticated |
+| `GET` | `/api/v1/conversations` | Employee |
+| `POST` | `/api/v1/conversations` | Employee |
+| `GET` | `/api/v1/conversations/{id}` | Employee owner |
 | `GET` | `/api/v1/me` | Authenticated |
 | `GET` | `/api/v1/requests` | Authenticated, role-scoped |
 | `POST` | `/api/v1/requests` | Employee |
@@ -34,6 +38,7 @@ identities. `X-User` and arbitrary user IDs are not accepted.
 | `POST` | `/api/v1/requests/{id}/cancel` | Employee owner |
 | `POST` | `/api/v1/requests/{id}/approve` | Manager |
 | `POST` | `/api/v1/requests/{id}/decline` | Manager |
+| `POST` | `/api/v1/requests/{id}/acknowledge` | Manager |
 | `POST` | `/api/v1/requests/{id}/comments` | Manager |
 | `GET` | `/api/v1/documents` | Knowledge Admin |
 | `POST` | `/api/v1/documents` | Knowledge Admin |
@@ -68,7 +73,14 @@ indexing after upload. The test endpoint accepts an unsaved settings payload and
 system prompt, runs a real answer preview, and deliberately disables workflow
 creation and chat logging.
 
+Employee chat history is user-scoped. Creating a conversation returns an empty
+record; it appears in the recent list after the first completed exchange. Pass
+its `id` as `conversation_id` to either chat endpoint. The server then stores the
+user message, assistant answer, source evidence, and any linked workflow draft.
+
 ## Request Example
+
+The workflow API supports two request types: `pto` and `sick_leave`.
 
 `POST /api/v1/requests`
 
@@ -86,6 +98,13 @@ validation and transitions it to `in_review`.
 
 Manager `approve` and `decline` endpoints apply a decision to a request that is
 already `in_review`, producing a single decision audit event.
+
+Sick leave uses the same request record with a small type-specific `details`
+object. The employee provides a first day away, expected return (or marks it
+unknown), full/partial-day availability, and an optional team note. Submission
+transitions `draft -> reported`; the manager acknowledges it through the
+`acknowledge` endpoint, producing `reported -> acknowledged`. Sick leave is not
+eligible for `approve` or `decline`, and no diagnosis field is accepted or stored.
 
 ## React Integration
 

@@ -13,19 +13,21 @@ class LoginRequest(BaseModel):
 
 
 class StructuredRequestCreate(BaseModel):
-    type: Literal["pto", "sick_leave", "document"]
+    type: Literal["pto", "sick_leave"]
     start_date: str | None = None
     end_date: str | None = None
-    comment: str = Field(..., min_length=1)
+    comment: str = ""
     approver: str | None = None
+    details: dict[str, object] = Field(default_factory=dict)
 
 
 class RequestSubmit(BaseModel):
-    type: Literal["pto", "sick_leave", "document"] | None = None
+    type: Literal["pto", "sick_leave"] | None = None
     start_date: str | None = None
     end_date: str | None = None
     comment: str | None = None
     approver: str | None = None
+    details: dict[str, object] | None = None
 
 
 class DecisionRequest(BaseModel):
@@ -79,4 +81,4 @@ class QualityReviewAction(BaseModel):
 
 
 class V1ChatRequest(ChatRequest):
-    pass
+    conversation_id: str | None = None

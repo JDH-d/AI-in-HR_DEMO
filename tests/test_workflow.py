@@ -94,6 +94,84 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(draft["type"], "sick_leave")
         self.assertEqual(draft["start_date"], "2030-04-02")
         self.assertEqual(draft["end_date"], "2030-04-02")
+        self.assertEqual(draft["comment"], "")
+        self.assertEqual(draft["details"]["expected_return_date"], "2030-04-03")
+
+    def test_sick_leave_is_reported_without_a_medical_note_or_approval(self) -> None:
+        draft = self.service.create_structured_draft(
+            request_type="sick_leave",
+            start_date="2030-04-01",
+            end_date=None,
+            comment="",
+            applicant="demo-user",
+            approver="manager.demo",
+            details={
+                "expected_return_date": "2030-04-02",
+                "expected_return_unknown": False,
+                "time_away": "full_day",
+                "partial_hours": None,
+                "extended_or_recurring": False,
+            },
+        )
+
+        reported = self.service.confirm_draft(draft["id"], "demo-user", {})
+        acknowledged = self.service.transition(
+            reported["id"],
+            "acknowledged",
+            actor="manager.demo",
+        )
+
+        self.assertEqual(reported["status"], "reported")
+        self.assertEqual(reported["end_date"], "2030-04-01")
+        self.assertEqual(reported["duration_days"], 1)
+        self.assertEqual(reported["comment"], "")
+        self.assertEqual(acknowledged["status"], "acknowledged")
+        self.assertEqual(
+            [event["to_status"] for event in self.service.history(draft["id"])["events"]],
+            ["draft", "reported", "acknowledged"],
+        )
+
+    def test_sick_leave_can_report_an_unknown_return_date(self) -> None:
+        draft = self.service.create_structured_draft(
+            request_type="sick_leave",
+            start_date="2030-04-01",
+            end_date="2030-04-05",
+            comment="I will update the team when I know more.",
+            applicant="demo-user",
+            approver="manager.demo",
+            details={
+                "expected_return_date": None,
+                "expected_return_unknown": True,
+                "time_away": "full_day",
+                "partial_hours": None,
+                "extended_or_recurring": True,
+            },
+        )
+
+        reported = self.service.confirm_draft(draft["id"], "demo-user", {})
+
+        self.assertIsNone(reported["end_date"])
+        self.assertIsNone(reported["duration_days"])
+        self.assertTrue(reported["details"]["expected_return_unknown"])
+        self.assertTrue(reported["details"]["extended_or_recurring"])
+
+    def test_partial_sick_leave_requires_valid_hours(self) -> None:
+        with self.assertRaises(WorkflowValidationError):
+            self.service.create_structured_draft(
+                request_type="sick_leave",
+                start_date="2030-04-01",
+                end_date=None,
+                comment="",
+                applicant="demo-user",
+                approver="manager.demo",
+                details={
+                    "expected_return_date": "2030-04-01",
+                    "expected_return_unknown": False,
+                    "time_away": "partial_day",
+                    "partial_hours": 0,
+                    "extended_or_recurring": False,
+                },
+            )
 
     def test_policy_questions_never_create_requests(self) -> None:
         questions = [
@@ -109,6 +187,20 @@ class WorkflowServiceTests(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertIsNone(self.service.prepare_draft(question, "demo-user"))
         self.assertEqual(self.service.list_for_user("demo-user"), [])
+
+    def test_document_language_does_not_create_a_workflow(self) -> None:
+        self.assertIsNone(
+            self.service.prepare_draft("I need an employment letter", "demo-user")
+        )
+        with self.assertRaises(WorkflowValidationError):
+            self.service.create_structured_draft(
+                request_type="document",
+                start_date=None,
+                end_date=None,
+                comment="Employment letter",
+                applicant="demo-user",
+                approver="manager.demo",
+            )
 
     def test_state_machine_blocks_invalid_transition(self) -> None:
         draft = self._draft()
@@ -241,6 +333,43 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(
             [event["to_status"] for event in history["events"]],
             ["draft", "in_review"],
+        )
+
+    def test_in_review_sick_leave_from_v6_is_migrated_to_reported(self) -> None:
+        draft = self.service.create_structured_draft(
+            request_type="sick_leave",
+            start_date="2030-04-01",
+            end_date=None,
+            comment="",
+            applicant="demo-user",
+            approver="manager.demo",
+            details={
+                "expected_return_date": "2030-04-02",
+                "expected_return_unknown": False,
+                "time_away": "full_day",
+            },
+        )
+        request = self.service.confirm_draft(draft["id"], "demo-user", {})
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE workflow_requests SET status = 'in_review' WHERE id = ?",
+                (request["id"],),
+            )
+            conn.execute(
+                "UPDATE request_events SET to_status = 'in_review' WHERE to_status = 'reported'"
+            )
+            conn.execute("PRAGMA user_version = 6")
+            conn.commit()
+
+        migrated = WorkflowService(str(self.db_path))
+        current = migrated.get_for_user(request["id"], "demo-user")
+        history = migrated.history(request["id"])
+
+        assert current is not None
+        self.assertEqual(current["status"], "reported")
+        self.assertEqual(
+            [event["to_status"] for event in history["events"]],
+            ["draft", "reported"],
         )
 
     def test_completed_status_from_v3_is_migrated_to_approved(self) -> None:

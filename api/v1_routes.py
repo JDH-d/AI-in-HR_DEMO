@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Iterator
@@ -26,10 +27,12 @@ from api.v1_schemas import (
 from rag.index import rebuild_index
 from rag.prompts import DEFAULT_SYSTEM_PROMPT, load_system_prompt, save_system_prompt
 from services.auth_service import AuthenticationError, DemoIdentity
+from services.conversation_service import ConversationNotFoundError
 from services.runtime import (
     ai_settings_service,
     auth_service,
     chat_service,
+    conversation_service,
     document_service,
     log_service,
     workflow_service,
@@ -69,12 +72,40 @@ def me(identity: DemoIdentity = Depends(current_identity)) -> dict:
     return {"user": identity.public_dict()}
 
 
+@router.get("/conversations")
+def list_conversations(
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> dict:
+    return {"conversations": conversation_service.list_for_user(identity.id)}
+
+
+@router.post("/conversations", status_code=status.HTTP_201_CREATED)
+def create_conversation(
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> dict:
+    return {"conversation": conversation_service.create(identity.id)}
+
+
+@router.get("/conversations/{conversation_id}")
+def get_conversation(
+    conversation_id: str,
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> dict:
+    conversation = conversation_service.get_for_user(conversation_id, identity.id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="The conversation could not be found.")
+    return conversation
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(
     payload: V1ChatRequest,
     identity: DemoIdentity = Depends(current_identity),
 ) -> ChatResponse:
-    return chat_service.handle_chat(payload, created_by=identity.id)
+    _ensure_conversation_access(payload.conversation_id, identity.id)
+    response = chat_service.handle_chat(payload, created_by=identity.id)
+    _store_conversation_exchange(payload, response, identity.id)
+    return response
 
 
 @router.post("/chat/stream")
@@ -82,12 +113,49 @@ def stream_chat(
     payload: V1ChatRequest,
     identity: DemoIdentity = Depends(current_identity),
 ) -> StreamingResponse:
+    _ensure_conversation_access(payload.conversation_id, identity.id)
     response = chat_service.handle_chat(payload, created_by=identity.id)
+    _store_conversation_exchange(payload, response, identity.id)
     return StreamingResponse(
         _stream_chat_response(response),
         media_type="application/x-ndjson",
         headers={"X-Content-Type-Options": "nosniff"},
     )
+
+
+def _ensure_conversation_access(conversation_id: str | None, owner_id: str) -> None:
+    if conversation_id and conversation_service.get_for_user(conversation_id, owner_id) is None:
+        raise HTTPException(status_code=404, detail="The conversation could not be found.")
+
+
+def _store_conversation_exchange(
+    payload: V1ChatRequest,
+    response: ChatResponse,
+    owner_id: str,
+) -> None:
+    if not payload.conversation_id:
+        return
+    user_content = next(
+        (message.content for message in reversed(payload.messages) if message.role == "user"),
+        "",
+    ).strip()
+    if not user_content:
+        return
+    try:
+        conversation_service.append_exchange(
+            payload.conversation_id,
+            owner_id,
+            user_content=user_content,
+            assistant_content=response.message.content,
+            sources=[source.model_dump() for source in response.sources or []],
+            workflow_request=(
+                response.workflow_request.model_dump()
+                if response.workflow_request is not None
+                else None
+            ),
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/requests")
@@ -112,6 +180,7 @@ def create_request(
             comment=payload.comment,
             applicant=identity.id,
             approver=payload.approver or identity.manager_id or "manager.demo",
+            details=payload.details,
         )
     except WorkflowValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors) from exc
@@ -186,6 +255,15 @@ def decline_request(
     identity: DemoIdentity = Depends(require_roles("manager")),
 ) -> dict:
     return {"request": _manager_decision(request_id, "declined", identity, payload.comment)}
+
+
+@router.post("/requests/{request_id}/acknowledge")
+def acknowledge_request(
+    request_id: str,
+    payload: DecisionRequest,
+    identity: DemoIdentity = Depends(require_roles("manager")),
+) -> dict:
+    return {"request": _manager_decision(request_id, "acknowledged", identity, payload.comment)}
 
 
 @router.post("/requests/{request_id}/comments", status_code=status.HTTP_201_CREATED)
@@ -488,7 +566,18 @@ def _manager_decision(
             detail="A manager comment is required when declining a request.",
         )
     request = _request_for_identity(request_id, identity)
-    if request["status"] != "in_review":
+    if request["type"] == "sick_leave" and target != "acknowledged":
+        raise HTTPException(
+            status_code=409,
+            detail="Sick leave reports are acknowledged, not approved or declined.",
+        )
+    if target == "acknowledged" and request["type"] != "sick_leave":
+        raise HTTPException(
+            status_code=409,
+            detail="Only sick leave reports can be acknowledged.",
+        )
+    expected_status = "reported" if target == "acknowledged" else "in_review"
+    if request["status"] != expected_status:
         raise HTTPException(
             status_code=409,
             detail=f"Request in status {request['status']} cannot be {target}.",
@@ -517,11 +606,9 @@ def _stream_chat_response(response: ChatResponse) -> Iterator[str]:
         )
         + "\n"
     )
-    words = response.message.content.split()
-    for start in range(0, len(words), 4):
-        chunk = " ".join(words[start : start + 4])
-        if start + 4 < len(words):
-            chunk += " "
+    content_parts = re.findall(r"\s+|\S+", response.message.content)
+    for start in range(0, len(content_parts), 8):
+        chunk = "".join(content_parts[start : start + 8])
         yield json.dumps({"type": "token", "content": chunk}) + "\n"
         time.sleep(0.012)
     yield (

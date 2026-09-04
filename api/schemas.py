@@ -36,6 +36,7 @@ class WorkflowRequestView(BaseModel):
     comment: str
     applicant: str
     approver: str
+    details: dict[str, object] = Field(default_factory=dict)
     status: str
     created_at: str
     updated_at: str

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock3, Filter, Inbox, Search, XCircle } from "lucide-react";
+import { CheckCircle2, Clock3, Filter, Inbox, Search, ShieldCheck, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
 import type { RequestDetail, WorkflowRequest } from "../../api/types";
@@ -7,6 +7,7 @@ import { useAuth } from "../../app/providers";
 import { Shell } from "../../components/Shell";
 import { Badge, Button, Card, Drawer, fieldClass, formatStatus, statusTone } from "../../components/ui";
 import { DecisionNote, RequestOverview, RequestTimeline } from "../requests/RequestDetails";
+import { requestPeriodLabel } from "../requests/requestPresentation";
 
 export function ManagerPage() {
   const { token } = useAuth();
@@ -20,8 +21,8 @@ export function ManagerPage() {
   });
   const data = requests.data?.requests ?? [];
   const counts = {
-    pending: data.filter(request => request.status === "in_review").length,
-    approved: data.filter(request => request.status === "approved").length,
+    pending: data.filter(request => ["in_review", "reported"].includes(request.status)).length,
+    completed: data.filter(request => ["approved", "acknowledged"].includes(request.status)).length,
     declined: data.filter(request => request.status === "declined").length,
   };
   const rows = useMemo(
@@ -33,24 +34,24 @@ export function ManagerPage() {
   );
   const sidebar = <>
     <Card className="mb-4 bg-lime-soft">
-      <p className="text-xs font-semibold text-lime">Decision queue</p>
+      <p className="text-xs font-semibold text-lime">Manager queue</p>
       <p className="mt-2 text-3xl font-medium">{counts.pending}</p>
-      <p className="text-xs text-muted">waiting for review</p>
+      <p className="text-xs text-muted">waiting for your attention</p>
     </Card>
-    <p className="px-3 text-xs leading-5 text-muted">Approve with confidence. Declines require a reason and every action stays in the timeline.</p>
+    <p className="px-3 text-xs leading-5 text-muted">Time-off requests need a decision. Sick leave only needs acknowledgement. Every action stays in the timeline.</p>
   </>;
 
   return <Shell sidebar={sidebar} eyebrow="Manager inbox">
     <div className="mx-auto max-w-7xl p-4 sm:p-8">
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[.18em] text-lime">Decision workspace</p>
+          <p className="text-xs font-bold uppercase tracking-[.18em] text-lime">Request workspace</p>
           <h1 className="mt-3 text-4xl font-medium tracking-[-.035em]">Manager inbox</h1>
-          <p className="mt-2 text-sm text-muted">Requests that need your judgment, not another spreadsheet.</p>
+          <p className="mt-2 text-sm text-muted">Decide when needed. Acknowledge when approval is not the point.</p>
         </div>
         <div className="flex gap-3">
-          <Metric label="Pending" value={counts.pending} icon={<Clock3 />} />
-          <Metric label="Approved" value={counts.approved} icon={<CheckCircle2 />} />
+          <Metric label="Open" value={counts.pending} icon={<Clock3 />} />
+          <Metric label="Completed" value={counts.completed} icon={<CheckCircle2 />} />
           <Metric label="Declined" value={counts.declined} icon={<XCircle />} />
         </div>
       </div>
@@ -66,6 +67,8 @@ export function ManagerPage() {
             <select className={`${fieldClass} min-w-44 pl-10`} value={status} onChange={event => setStatus(event.target.value)}>
               <option value="all">All statuses</option>
               <option value="in_review">In review</option>
+              <option value="reported">Reported</option>
+              <option value="acknowledged">Acknowledged</option>
               <option value="approved">Approved</option>
               <option value="declined">Declined</option>
               <option value="cancelled">Cancelled</option>
@@ -78,12 +81,12 @@ export function ManagerPage() {
               {["Request", "Employee", "Dates", "Status", "Created", ""].map(column => <th key={column} className="px-5 py-3 font-semibold">{column}</th>)}
             </tr></thead>
             <tbody>{rows.map(request => <tr key={request.id} className="border-t border-line/70 hover:bg-raised/60">
-              <td className="px-5 py-4"><strong className="text-sm">{request.type_label}</strong><p className="mt-1 max-w-xs truncate text-xs text-muted">{request.comment}</p></td>
+              <td className="px-5 py-4"><strong className="text-sm">{request.type_label}</strong><p className="mt-1 max-w-xs truncate text-xs text-muted">{request.comment || (request.type === "sick_leave" ? "No team note" : "No note")}</p></td>
               <td className="px-5 py-4 text-sm">{request.applicant}</td>
-              <td className="px-5 py-4 text-xs text-muted">{request.start_date ?? "—"} → {request.end_date ?? "—"}</td>
+              <td className="px-5 py-4 text-xs text-muted">{requestPeriodLabel(request)}</td>
               <td className="px-5 py-4"><Badge tone={statusTone(request.status)}>{formatStatus(request.status)}</Badge></td>
               <td className="px-5 py-4 text-xs text-muted">{new Date(request.created_at).toLocaleDateString()}</td>
-              <td className="px-5 py-4"><Button tone="secondary" onClick={() => setSelected(request.id)}>Review</Button></td>
+              <td className="px-5 py-4"><Button tone="secondary" onClick={() => setSelected(request.id)}>Open</Button></td>
             </tr>)}</tbody>
           </table>
           {!rows.length && <div className="grid min-h-52 place-items-center text-sm text-muted"><div className="text-center"><Inbox className="mx-auto mb-2" />No requests match this view.</div></div>}
@@ -120,7 +123,7 @@ function DecisionDialog({ id, onClose, onChanged }: { id: string | null; onClose
     setError("");
   }, [id]);
   const action = useMutation({
-    mutationFn: (kind: "approve" | "decline") => {
+    mutationFn: (kind: "approve" | "decline" | "acknowledge") => {
       if (kind === "decline" && !comment.trim()) throw new Error("A decline reason is required.");
       return api(`/api/v1/requests/${id}/${kind}`, token, { method: "POST", body: JSON.stringify({ comment }) });
     },
@@ -138,7 +141,9 @@ function DecisionDialog({ id, onClose, onChanged }: { id: string | null; onClose
     open={Boolean(id)}
     onOpenChange={open => !open && onClose()}
     title={request?.type_label ?? "Request review"}
-    description="Review the request, decision notes, and timeline before deciding."
+    description={request?.type === "sick_leave"
+      ? "Review availability and acknowledge the report."
+      : "Review the request, decision notes, and timeline before deciding."}
     placement="center"
   >
     {detail.isLoading && <p className="text-muted">Loading request…</p>}
@@ -150,6 +155,37 @@ function DecisionDialog({ id, onClose, onChanged }: { id: string | null; onClose
       </div>
       <RequestOverview request={request} />
       <DecisionNote detail={detail.data} />
+      {request.status === "reported" && <section className="rounded-2xl border border-lime/20 bg-lime/5 p-5">
+        <div className="flex gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-lime/12 text-lime">
+            <ShieldCheck size={18} />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold">Acknowledge, don’t approve</h3>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Confirm you have seen the absence and can plan coverage.
+            </p>
+          </div>
+        </div>
+        <label className="mt-5 block text-xs font-semibold text-muted">
+          Support note <span className="font-normal">(optional)</span>
+          <textarea
+            className={`${fieldClass} mt-2 min-h-20 resize-none`}
+            value={comment}
+            onChange={event => setComment(event.target.value)}
+            placeholder="For example: Take care — I’ll cover today’s stand-up."
+          />
+        </label>
+        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+        <Button
+          className="mt-4 w-full"
+          onClick={() => action.mutate("acknowledge")}
+          disabled={action.isPending}
+        >
+          <CheckCircle2 size={16} />
+          {action.isPending ? "Acknowledging…" : "Acknowledge absence"}
+        </Button>
+      </section>}
       {request.status === "in_review" && <section className="rounded-2xl border border-line bg-ink/35 p-5">
         <label className="block text-xs font-semibold text-muted">
           Decision note

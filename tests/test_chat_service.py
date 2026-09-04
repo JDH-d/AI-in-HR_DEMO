@@ -133,6 +133,22 @@ class ChatServiceTests(unittest.TestCase):
         self.assertIsNone(response.workflow_request)
         self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
 
+    def test_hr_support_shortcut_returns_fixed_handoff(self) -> None:
+        request = ChatRequest(messages=[Message(role="user", content="I need help from HR")])
+
+        with patch.object(self.service.rag_service, "answer_with_retrieval") as retrieve:
+            response = self.service.handle_chat(request, created_by="demo-user")
+
+        self.assertEqual(response.intent, "work")
+        self.assertEqual(
+            response.message.content,
+            "I’ve opened a private HR support request for you. An HR partner will review it "
+            "and follow up here. You can add any helpful context in this conversation.",
+        )
+        self.assertEqual(response.sources, [])
+        self.assertIsNone(response.workflow_request)
+        retrieve.assert_not_called()
+
     def test_explicit_topic_selection_returns_guided_response(self) -> None:
         request = ChatRequest(messages=[Message(role="user", content="2")])
 

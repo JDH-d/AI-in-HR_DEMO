@@ -286,10 +286,10 @@ def _render_workflow_confirmation(
         with st.form(key=f"workflow-confirm-{request_id}"):
             request_type = st.selectbox(
                 "Type",
-                options=["pto", "sick_leave", "document"],
-                index=["pto", "sick_leave", "document"].index(
+                options=["pto", "sick_leave"],
+                index=["pto", "sick_leave"].index(
                     request.get("type")
-                    if request.get("type") in {"pto", "sick_leave", "document"}
+                    if request.get("type") in {"pto", "sick_leave"}
                     else "pto"
                 ),
             )

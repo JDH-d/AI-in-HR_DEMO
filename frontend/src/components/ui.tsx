@@ -39,8 +39,8 @@ export function formatStatus(status: string): string {
   return status.replaceAll("_", " ");
 }
 export function statusTone(status: string): "neutral" | "success" | "warning" | "danger" {
-  if (["approved","indexed"].includes(status)) return "success";
-  if (["in_review","indexing","draft","pending"].includes(status)) return "warning";
+  if (["approved","acknowledged","indexed"].includes(status)) return "success";
+  if (["in_review","reported","indexing","draft","pending"].includes(status)) return "warning";
   if (["declined","cancelled","error"].includes(status)) return "danger";
   return "neutral";
 }

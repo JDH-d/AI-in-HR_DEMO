@@ -87,6 +87,64 @@ class WorkflowV1APITests(unittest.TestCase):
             ["draft", "in_review", "approved"],
         )
 
+    def test_sick_leave_is_reported_and_acknowledged_instead_of_approved(self) -> None:
+        created = self.client.post(
+            "/api/v1/requests",
+            headers=self.employee_headers,
+            json={
+                "type": "sick_leave",
+                "start_date": "2030-04-01",
+                "comment": "",
+                "details": {
+                    "expected_return_date": "2030-04-02",
+                    "expected_return_unknown": False,
+                    "time_away": "full_day",
+                    "partial_hours": None,
+                    "extended_or_recurring": True,
+                },
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        draft = created.json()["request"]
+
+        reported = self.client.post(
+            f"/api/v1/requests/{draft['id']}/submit",
+            headers=self.employee_headers,
+            json={},
+        )
+        forbidden_employee = self.client.post(
+            f"/api/v1/requests/{draft['id']}/acknowledge",
+            headers=self.employee_headers,
+            json={},
+        )
+        cannot_approve = self.client.post(
+            f"/api/v1/requests/{draft['id']}/approve",
+            headers=self.manager_headers,
+            json={},
+        )
+        acknowledged = self.client.post(
+            f"/api/v1/requests/{draft['id']}/acknowledge",
+            headers=self.manager_headers,
+            json={"comment": "Take care — I will cover the stand-up."},
+        )
+        detail = self.client.get(
+            f"/api/v1/requests/{draft['id']}",
+            headers=self.employee_headers,
+        ).json()
+
+        self.assertEqual(reported.status_code, 200)
+        self.assertEqual(reported.json()["request"]["status"], "reported")
+        self.assertEqual(reported.json()["request"]["duration_days"], 1)
+        self.assertTrue(reported.json()["request"]["details"]["extended_or_recurring"])
+        self.assertEqual(forbidden_employee.status_code, 403)
+        self.assertEqual(cannot_approve.status_code, 409)
+        self.assertEqual(acknowledged.status_code, 200)
+        self.assertEqual(acknowledged.json()["request"]["status"], "acknowledged")
+        self.assertEqual(
+            [event["to_status"] for event in detail["events"]],
+            ["draft", "reported", "acknowledged"],
+        )
+
     def test_manager_can_decline_and_employee_cannot_decide(self) -> None:
         request = self._review_request()
 
@@ -134,9 +192,23 @@ class WorkflowV1APITests(unittest.TestCase):
         create = self.client.post(
             "/api/v1/requests",
             headers=self.admin_headers,
-            json={"type": "document", "comment": "Employment letter"},
+            json={
+                "type": "pto",
+                "start_date": "2030-04-01",
+                "end_date": "2030-04-01",
+                "comment": "Time off",
+            },
         )
         self.assertEqual(create.status_code, 403)
+
+    def test_document_request_type_is_not_supported(self) -> None:
+        response = self.client.post(
+            "/api/v1/requests",
+            headers=self.employee_headers,
+            json={"type": "document", "comment": "Employment letter"},
+        )
+
+        self.assertEqual(response.status_code, 422)
 
     def test_employee_can_cancel_own_request(self) -> None:
         request = self._review_request()
