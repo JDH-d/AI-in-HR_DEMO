@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from services.conversation_service import ConversationNotFoundError, ConversationService
@@ -89,6 +91,51 @@ class ConversationServiceTests(unittest.TestCase):
             {"questions": 1, "grounded_answers": 1},
         )
 
+    def test_delete_removes_messages_and_updates_history_metrics(self) -> None:
+        detail = self.service.record_exchange(
+            "employee.demo",
+            conversation_id=None,
+            user_content="When is payroll processed?",
+            assistant_content="Twice per month.",
+            outcome_code="grounded",
+        )
+        retained = self.service.record_exchange(
+            "another.employee",
+            conversation_id=None,
+            user_content="What can you help with?",
+            assistant_content="Company policy questions and requests.",
+        )
+        conversation_id = detail["conversation"]["id"]
+
+        self.assertTrue(self.service.delete_for_user(conversation_id, "employee.demo"))
+
+        self.assertIsNone(self.service.get_for_user(conversation_id, "employee.demo"))
+        self.assertEqual(self.service.list_for_user("employee.demo"), [])
+        self.assertEqual(
+            self.service.get_for_user(retained["conversation"]["id"], "another.employee"),
+            retained,
+        )
+        self.assertEqual(self.service.metrics(), {"questions": 1, "grounded_answers": 0})
+        with closing(sqlite3.connect(self.service.db_path)) as conn:
+            message_count = conn.execute(
+                "SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()[0]
+        self.assertEqual(message_count, 0)
+
+    def test_delete_does_not_expose_or_remove_other_users_history(self) -> None:
+        detail = self.service.record_exchange(
+            "employee.demo",
+            conversation_id=None,
+            user_content="When is payroll processed?",
+            assistant_content="Twice per month.",
+        )
+        conversation_id = detail["conversation"]["id"]
+
+        self.assertFalse(self.service.delete_for_user(conversation_id, "another.employee"))
+        self.assertFalse(self.service.delete_for_user("missing-conversation", "employee.demo"))
+        self.assertEqual(self.service.get_for_user(conversation_id, "employee.demo"), detail)
+
     def test_history_is_imported_from_the_legacy_workflow_database_once(self) -> None:
         legacy_path = Path(self.temp_dir.name) / "legacy-workflow.db"
         legacy = ConversationService(legacy_path)
@@ -112,6 +159,33 @@ class ConversationServiceTests(unittest.TestCase):
         )
         self.assertEqual(len(reopened.list_for_user("employee.demo")), 1)
         self.assertEqual(reopened.metrics()["grounded_answers"], 1)
+
+        self.assertTrue(reopened.delete_for_user(conversation_id, "employee.demo"))
+        after_delete = ConversationService(new_path, legacy_db_path=legacy_path)
+        self.assertEqual(after_delete.list_for_user("employee.demo"), [])
+        self.assertEqual(after_delete.metrics(), {"questions": 0, "grounded_answers": 0})
+
+    def test_existing_history_is_not_reimported_after_its_last_chat_is_deleted(self) -> None:
+        legacy_path = Path(self.temp_dir.name) / "legacy-workflow.db"
+        legacy = ConversationService(legacy_path)
+        legacy.record_exchange(
+            "employee.demo",
+            conversation_id=None,
+            user_content="Old history",
+            assistant_content="Old answer.",
+        )
+        current = self.service.record_exchange(
+            "employee.demo",
+            conversation_id=None,
+            user_content="Current history",
+            assistant_content="Current answer.",
+        )
+        upgraded = ConversationService(self.service.db_path, legacy_db_path=legacy_path)
+
+        self.assertTrue(upgraded.delete_for_user(current["conversation"]["id"], "employee.demo"))
+        reopened = ConversationService(self.service.db_path, legacy_db_path=legacy_path)
+
+        self.assertEqual(reopened.list_for_user("employee.demo"), [])
 
 
 if __name__ == "__main__":

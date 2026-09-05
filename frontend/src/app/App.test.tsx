@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RequestDetail, WorkflowRequest } from "../api/types";
 import { statusTone } from "../components/ui";
 import { decisionComment, RequestOverview } from "../features/requests/RequestDetails";
@@ -9,7 +9,11 @@ import { App } from "./App";
 import { AppProviders } from "./providers";
 
 describe("PeopleFlow application shell", () => {
-  beforeEach(() => sessionStorage.clear());
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+  afterEach(cleanup);
 
   it("shows all three predefined role workspaces", async () => {
     render(
@@ -19,10 +23,41 @@ describe("PeopleFlow application shell", () => {
         </AppProviders>
       </MemoryRouter>,
     );
-    expect(await screen.findByText("Work questions become")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Open your workspace" })).toBeInTheDocument();
     expect(screen.getByText("Employee")).toBeInTheDocument();
     expect(screen.getByText("Manager")).toBeInTheDocument();
     expect(screen.getByText("Knowledge Admin")).toBeInTheDocument();
+  });
+
+  it("lets users choose a demo account and reveal their password without changing it", () => {
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <AppProviders>
+          <App />
+        </AppProviders>
+      </MemoryRouter>,
+    );
+
+    const employee = screen.getByRole("button", { name: /^Employee/ });
+    const manager = screen.getByRole("button", { name: /^Manager/ });
+    expect(employee).toHaveAttribute("aria-pressed", "true");
+    expect(manager).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(manager);
+    expect(manager).toHaveAttribute("aria-pressed", "true");
+    expect(employee).toHaveAttribute("aria-pressed", "false");
+
+    const password = screen.getByLabelText("Demo password");
+    fireEvent.change(password, { target: { value: "my-demo-password" } });
+    expect(password).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("my-demo-password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveValue("my-demo-password");
+    expect(manager).toHaveAttribute("aria-pressed", "true");
   });
 
   it("maps workflow states to consistent semantic tones", () => {

@@ -67,6 +67,10 @@ class ConversationService:
                     ON conversations(owner_id, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_conversation_messages
                     ON conversation_messages(conversation_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS conversation_migrations (
+                    name TEXT PRIMARY KEY
+                );
                 """
             )
             columns = {
@@ -102,7 +106,16 @@ class ConversationService:
             return
 
         with closing(self._connect()) as target:
+            if target.execute(
+                "SELECT 1 FROM conversation_migrations WHERE name = 'legacy_history_import'"
+            ).fetchone():
+                return
             if target.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]:
+                # An existing history must not be replaced after the user deletes its last chat.
+                target.execute(
+                    "INSERT OR IGNORE INTO conversation_migrations VALUES ('legacy_history_import')"
+                )
+                target.commit()
                 return
 
         with closing(sqlite3.connect(str(legacy_path))) as source:
@@ -170,6 +183,9 @@ class ConversationService:
                 ],
             )
             self._backfill_message_metadata(target)
+            target.execute(
+                "INSERT OR IGNORE INTO conversation_migrations VALUES ('legacy_history_import')"
+            )
             target.commit()
 
     @classmethod
@@ -254,6 +270,16 @@ class ConversationService:
             "conversation": _conversation_row_to_dict(conversation),
             "messages": [_message_row_to_dict(row) for row in messages],
         }
+
+    def delete_for_user(self, conversation_id: str, owner_id: str) -> bool:
+        """Delete a user's conversation and its messages, leaving workflow requests intact."""
+        with closing(self._connect()) as conn:
+            deleted = conn.execute(
+                "DELETE FROM conversations WHERE id = ? AND owner_id = ?",
+                (conversation_id, owner_id),
+            )
+            conn.commit()
+        return deleted.rowcount > 0
 
     def metrics(self) -> dict[str, int]:
         with closing(self._connect()) as conn:

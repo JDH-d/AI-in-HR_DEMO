@@ -1,4 +1,4 @@
-import { ThumbsDown, ThumbsUp } from "lucide-react";
+import { ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
 import { useState } from "react";
 import { api } from "../../api/client";
 import { useAuth } from "../../app/providers";
@@ -46,7 +46,7 @@ export function FeedbackButtons({ question, answer }: { question: string; answer
             aria-label="Helpful"
             disabled={sending}
             onClick={() => send(5)}
-            className="rounded-lg p-2 text-muted hover:text-lime disabled:opacity-45"
+            className="focus-ring rounded-md p-2 text-muted hover:bg-raised hover:text-accent disabled:opacity-45"
           >
             <ThumbsUp size={15} />
           </button>
@@ -57,14 +57,14 @@ export function FeedbackButtons({ question, answer }: { question: string; answer
             aria-label="Not helpful"
             disabled={sending}
             onClick={() => setExplain(true)}
-            className={`rounded-lg p-2 ${explain ? "bg-danger/10 text-danger" : "text-muted hover:text-danger"}`}
+            className={`focus-ring rounded-md p-2 ${explain ? "bg-danger/10 text-danger" : "text-muted hover:bg-raised hover:text-danger"}`}
           >
             <ThumbsDown size={15} />
           </button>
         </Hint>
       </div>
       {explain && (
-        <div className="mt-3 max-w-xl rounded-2xl border border-danger/20 bg-danger/5 p-4">
+        <div className="mt-3 max-w-xl rounded-lg border border-line bg-panel p-4">
           <label className="text-xs font-semibold text-cream">
             What should we improve? <span className="font-normal text-muted">Optional</span>
             <textarea
@@ -91,6 +91,11 @@ export function FeedbackButtons({ question, answer }: { question: string; answer
             </Button>
           </div>
         </div>
+      )}
+      {error && !explain && (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          {error}
+        </p>
       )}
     </div>
   );

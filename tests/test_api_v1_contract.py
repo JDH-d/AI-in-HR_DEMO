@@ -42,6 +42,7 @@ class APIV1ContractTests(unittest.TestCase):
             ("POST", "/api/v1/chat/stream"),
             ("GET", "/api/v1/conversations"),
             ("GET", "/api/v1/conversations/{conversation_id}"),
+            ("DELETE", "/api/v1/conversations/{conversation_id}"),
             ("GET", "/api/v1/me"),
             ("GET", "/api/v1/requests"),
             ("POST", "/api/v1/requests"),
@@ -180,6 +181,104 @@ class APIV1ContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(detail["conversation"]["message_count"], 2)
         self.assertEqual(self.services.workflow.list_for_user("employee.demo"), [])
+
+    def test_employee_can_delete_a_conversation_with_an_empty_204_response(self) -> None:
+        headers = self._headers("employee")
+        created = self.client.post(
+            "/api/v1/chat",
+            headers=headers,
+            json={"messages": [{"role": "user", "content": "What can you help with?"}]},
+        ).json()
+        path = f"/api/v1/conversations/{created['conversation_id']}"
+
+        deleted = self.client.delete(path, headers=headers)
+
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(deleted.content, b"")
+        self.assertEqual(self.client.get(path, headers=headers).status_code, 404)
+        self.assertEqual(
+            self.client.get("/api/v1/conversations", headers=headers).json()["conversations"],
+            [],
+        )
+        self.assertEqual(self.client.delete(path, headers=headers).status_code, 404)
+        self.assertEqual(self.services.conversations.metrics()["questions"], 0)
+
+    def test_delete_returns_the_same_404_for_foreign_and_missing_conversations(self) -> None:
+        foreign = self.services.conversations.record_exchange(
+            "another.employee",
+            conversation_id=None,
+            user_content="Private question",
+            assistant_content="Private answer.",
+        )
+        foreign_id = foreign["conversation"]["id"]
+        headers = self._headers("employee")
+
+        denied = self.client.delete(f"/api/v1/conversations/{foreign_id}", headers=headers)
+        missing = self.client.delete("/api/v1/conversations/missing-conversation", headers=headers)
+
+        self.assertEqual(denied.status_code, 404)
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(denied.json(), missing.json())
+        self.assertEqual(
+            self.services.conversations.get_for_user(foreign_id, "another.employee"),
+            foreign,
+        )
+
+    def test_delete_conversation_requires_employee_authentication(self) -> None:
+        detail = self.services.conversations.record_exchange(
+            "employee.demo",
+            conversation_id=None,
+            user_content="Private question",
+            assistant_content="Private answer.",
+        )
+        path = f"/api/v1/conversations/{detail['conversation']['id']}"
+
+        self.assertEqual(self.client.delete(path).status_code, 401)
+        for role in ("manager", "knowledge_admin"):
+            with self.subTest(role=role):
+                self.assertEqual(
+                    self.client.delete(path, headers=self._headers(role)).status_code,
+                    403,
+                )
+        self.assertIsNotNone(
+            self.services.conversations.get_for_user(detail["conversation"]["id"], "employee.demo")
+        )
+
+    def test_deleting_a_conversation_preserves_its_workflow_request_and_timeline(self) -> None:
+        employee_headers = self._headers("employee")
+        created = self.client.post(
+            "/api/v1/chat",
+            headers=employee_headers,
+            json={
+                "messages": [
+                    {"role": "user", "content": "I need vacation from 2030-04-01 to 2030-04-03"}
+                ]
+            },
+        ).json()
+        request_id = created["workflow_request"]["id"]
+        request_path = f"/api/v1/requests/{request_id}"
+        submitted = self.client.post(
+            f"{request_path}/submit",
+            headers=employee_headers,
+            json={"comment": "Family vacation"},
+        )
+        self.assertEqual(submitted.status_code, 200)
+        before = self.client.get(request_path, headers=employee_headers).json()
+
+        deleted = self.client.delete(
+            f"/api/v1/conversations/{created['conversation_id']}",
+            headers=employee_headers,
+        )
+
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(self.client.get(request_path, headers=employee_headers).json(), before)
+        manager_requests = self.client.get(
+            "/api/v1/requests",
+            headers=self._headers("manager"),
+        ).json()["requests"]
+        self.assertEqual([request["id"] for request in manager_requests], [request_id])
+        self.assertEqual(manager_requests[0]["status"], "in_review")
+        self.assertEqual(self.services.workflow.metrics()["total_requests"], 1)
 
     def test_conversation_workflow_card_reflects_current_request_state(self) -> None:
         headers = self._headers("employee")

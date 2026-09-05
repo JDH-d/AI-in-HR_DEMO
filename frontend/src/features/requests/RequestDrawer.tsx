@@ -17,7 +17,9 @@ type RequestDrawerProps = {
 
 export function RequestDrawer({ open, ...props }: RequestDrawerProps) {
   if (!open) return null;
-  return <RequestDrawerContent key={props.initial?.id ?? "new-request"} open={open} {...props} />;
+  // Keep this session mounted when the parent receives the newly created request ID.
+  // Closing the drawer still unmounts it so the next open starts with fresh values.
+  return <RequestDrawerContent open={open} {...props} />;
 }
 
 function RequestDrawerContent({ open, onOpenChange, initial, onSubmitted }: RequestDrawerProps) {
@@ -68,7 +70,12 @@ function RequestDrawerContent({ open, onOpenChange, initial, onSubmitted }: Requ
 
   if (submitted) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange} title="Request sent">
+      <Drawer
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Request sent"
+        description="Your time off is ready for manager review."
+      >
         <PtoSuccess />
       </Drawer>
     );
@@ -82,13 +89,13 @@ function RequestDrawerContent({ open, onOpenChange, initial, onSubmitted }: Requ
       ? "Review time off"
       : "Plan time off";
   const description = form.isSickLeave
-    ? "Let your manager know when you will be away. This is a notification, not an approval request."
-    : "Your manager only gets the dates and a short planning note. Nothing is sent until you confirm.";
+    ? "Share your availability with your manager. Medical details are not required."
+    : "Review the dates and planning note before sending to your manager.";
   const clearError = () => setError("");
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} title={title} description={description}>
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <div className="mb-5 flex items-center justify-between gap-3 border-b border-line pb-4">
         <Badge tone={statusTone(activeDraft?.status ?? "draft")}>
           {activeDraft?.status
             ? formatStatus(activeDraft.status)
@@ -103,7 +110,14 @@ function RequestDrawerContent({ open, onOpenChange, initial, onSubmitted }: Requ
         </span>
       </div>
 
-      <div className="space-y-5">
+      <form
+        className="space-y-5"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (form.formIsReady && !mutation.isPending) mutation.mutate();
+        }}
+      >
         <RequestTypeField
           type={form.values.type}
           onChange={(type) => {
@@ -117,26 +131,36 @@ function RequestDrawerContent({ open, onOpenChange, initial, onSubmitted }: Requ
           <PtoFields form={form} onInteraction={clearError} />
         )}
 
-        {error && <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger">{error}</p>}
-        <div className="flex gap-3">
-          <Button tone="secondary" className="flex-1" onClick={() => onOpenChange(false)}>
-            {activeDraft ? "Keep as draft" : "Close"}
-          </Button>
-          <Button
-            className="flex-1"
-            disabled={mutation.isPending || !form.formIsReady}
-            onClick={() => mutation.mutate()}
+        {error && (
+          <p
+            role="alert"
+            className="rounded-lg border border-danger/25 bg-danger/5 p-3 text-sm text-danger"
           >
-            {mutation.isPending
-              ? form.isSickLeave
-                ? "Reporting…"
-                : "Sending…"
-              : form.isSickLeave
-                ? "Report sick leave"
-                : "Send for approval"}
-          </Button>
+            {error}
+          </p>
+        )}
+        <div className="sticky -bottom-6 -mx-6 border-t border-line bg-panel px-6 pb-6 pt-4 sm:-bottom-8 sm:-mx-8 sm:px-8 sm:pb-8">
+          {form.isDirty && (
+            <p className="mb-3 text-xs leading-5 text-muted">
+              Closing will discard unsent changes.
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" tone="secondary" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button type="submit" disabled={mutation.isPending || !form.formIsReady}>
+              {mutation.isPending
+                ? form.isSickLeave
+                  ? "Reporting…"
+                  : "Sending…"
+                : form.isSickLeave
+                  ? "Report sick leave"
+                  : "Send for approval"}
+            </Button>
+          </div>
         </div>
-      </div>
+      </form>
     </Drawer>
   );
 }

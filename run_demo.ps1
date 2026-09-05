@@ -1,12 +1,15 @@
-param(
+﻿param(
     [ValidateRange(1, 65535)][int]$ApiPort = 8000,
     [ValidateRange(1, 65535)][int]$UserUiPort = 5173,
     [switch]$InstallDeps,
+    [switch]$RuntimeDepsOnly,
     [switch]$SkipIndexRebuild,
     [switch]$ForceRestart
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $projectRoot = Split-Path -Parent $PSCommandPath
 if (-not $projectRoot) {
     throw "Unable to resolve the project root."
@@ -14,14 +17,61 @@ if (-not $projectRoot) {
 $projectRoot = [IO.Path]::GetFullPath($projectRoot)
 . (Join-Path $projectRoot "scripts\demo_processes.ps1")
 
+function Get-PythonRuntime {
+    param([string]$FilePath, [string[]]$PrefixArgs = @())
+
+    # Execute Python code instead of accepting a PATH entry or a Windows Store alias.
+    $probeCode = "import json, sys; print(json.dumps({'version': list(sys.version_info[:3]), 'prefix': sys.prefix, 'base_prefix': sys.base_prefix}))"
+    $probe = [Diagnostics.Process]::new()
+    try {
+        $probe.StartInfo.FileName = $FilePath
+        $probe.StartInfo.Arguments = (@($PrefixArgs) + @("-I", "-c", ('"' + $probeCode + '"'))) -join " "
+        $probe.StartInfo.UseShellExecute = $false
+        $probe.StartInfo.CreateNoWindow = $true
+        $probe.StartInfo.RedirectStandardOutput = $true
+        $probe.StartInfo.RedirectStandardError = $true
+        if (-not $probe.Start()) {
+            return $null
+        }
+        $outputTask = $probe.StandardOutput.ReadToEndAsync()
+        $errorTask = $probe.StandardError.ReadToEndAsync()
+        if (-not $probe.WaitForExit(10000)) {
+            $probe.Kill()
+            return $null
+        }
+        if ($probe.ExitCode -ne 0) {
+            return $null
+        }
+        $runtime = $outputTask.GetAwaiter().GetResult() | ConvertFrom-Json
+        $null = $errorTask.GetAwaiter().GetResult()
+        $version = [version]($runtime.version -join ".")
+        if ($version -lt [version]"3.10") {
+            return $null
+        }
+        return [pscustomobject]@{
+            Version = $version
+            Prefix = [string]$runtime.prefix
+            IsVirtualEnvironment = $runtime.prefix -ne $runtime.base_prefix
+        }
+    } catch {
+        return $null
+    } finally {
+        $probe.Dispose()
+    }
+}
+
 function Resolve-BootstrapPython {
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        return @{ FilePath = "python"; PrefixArgs = @() }
+    foreach ($candidate in @(
+        @{ Name = "python.exe"; PrefixArgs = @() },
+        @{ Name = "py.exe"; PrefixArgs = @("-3") }
+    )) {
+        foreach ($command in @(Get-Command $candidate.Name -CommandType Application -ErrorAction SilentlyContinue)) {
+            if (Get-PythonRuntime -FilePath $command.Source -PrefixArgs $candidate.PrefixArgs) {
+                return @{ FilePath = $command.Source; PrefixArgs = $candidate.PrefixArgs }
+            }
+        }
     }
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        return @{ FilePath = "py"; PrefixArgs = @("-3") }
-    }
-    throw "Python 3 was not found in PATH."
+    throw "A working Python 3.10+ was not found. Install Python, then reopen the launcher. Windows Store placeholder aliases are not sufficient."
 }
 
 function Resolve-ProjectPython {
@@ -30,6 +80,9 @@ function Resolve-ProjectPython {
     $virtualEnvironment = Join-Path $Root ".venv"
     $virtualPython = Join-Path $virtualEnvironment "Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $virtualPython)) {
+        if (Test-Path -LiteralPath $virtualEnvironment) {
+            throw "The existing .venv is incomplete. Rename or repair $virtualEnvironment, then run .\run_demo.ps1 -InstallDeps."
+        }
         if (-not $MayCreate) {
             throw "Missing .venv. Run .\run_demo.ps1 -InstallDeps once to create it."
         }
@@ -39,7 +92,46 @@ function Resolve-ProjectPython {
             throw "Python virtual environment creation failed."
         }
     }
+    $runtime = Get-PythonRuntime -FilePath $virtualPython
+    if (-not $runtime -or -not $runtime.IsVirtualEnvironment -or -not [string]::Equals(
+        [IO.Path]::GetFullPath($runtime.Prefix),
+        [IO.Path]::GetFullPath($virtualEnvironment),
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "The existing .venv cannot run Python 3.10+ correctly. Rename or repair $virtualEnvironment, then run .\run_demo.ps1 -InstallDeps."
+    }
     return $virtualPython
+}
+
+function Resolve-ProjectNode {
+    $command = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $command) {
+        throw "Node.js 22.12+ was not found. Install Node.js, then reopen the launcher."
+    }
+    try {
+        $reportedVersion = (& $command.Source -p "process.versions.node" 2>$null) -join ""
+        if ($LASTEXITCODE -ne 0 -or $reportedVersion -notmatch '^\d+\.\d+\.\d+$' -or
+            [version]$reportedVersion -lt [version]"22.12") {
+            throw "Unsupported Node.js runtime."
+        }
+    } catch {
+        throw "This demo requires Node.js 22.12 or newer. Update Node.js, then reopen the launcher."
+    }
+    return $command.Source
+}
+
+function Assert-DemoPortAvailable {
+    param([int]$Port, [string]$Name, [string]$Option)
+
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
+    try {
+        $listener.ExclusiveAddressUse = $true
+        $listener.Start()
+    } catch {
+        throw "$Name port $Port is unavailable. Close the application using it or choose a different -$Option value."
+    } finally {
+        $listener.Stop()
+    }
 }
 
 function Import-DotEnv {
@@ -80,6 +172,18 @@ function Set-DefaultEnvironmentValue {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) {
         Set-Item -Path "Env:$Name" -Value $Value
     }
+}
+
+function Set-DemoCorsOrigins {
+    param([int]$FrontendPort)
+
+    $configured = [Environment]::GetEnvironmentVariable("CORS_ORIGINS", "Process")
+    if ([string]::IsNullOrWhiteSpace($configured)) {
+        $configured = "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173"
+    }
+    $origins = @($configured.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $origins += @("http://127.0.0.1:$FrontendPort", "http://localhost:$FrontendPort")
+    $env:CORS_ORIGINS = ($origins | Select-Object -Unique) -join ","
 }
 
 function Start-DemoProcess {
@@ -153,6 +257,9 @@ function Wait-FrontendReady {
 $logDirectory = Join-Path $projectRoot ".demo_logs"
 $stateDirectory = Join-Path $projectRoot ".demo_state"
 $pidFile = Join-Path $stateDirectory "demo_processes.json"
+if ($ApiPort -eq $UserUiPort) {
+    throw "API and frontend need different ports. Set distinct -ApiPort and -UserUiPort values."
+}
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
 
@@ -174,26 +281,34 @@ if ($existingState) {
     Remove-Item -LiteralPath $pidFile -Force
 }
 
+Assert-DemoPortAvailable -Port $ApiPort -Name "API" -Option "ApiPort"
+Assert-DemoPortAvailable -Port $UserUiPort -Name "Frontend" -Option "UserUiPort"
 $python = Resolve-ProjectPython -Root $projectRoot -MayCreate $InstallDeps
-$node = (Get-Command node -ErrorAction Stop).Source
+$node = Resolve-ProjectNode
 $frontendDirectory = Join-Path $projectRoot "frontend"
 if ($InstallDeps) {
-    & $python -m pip install -r (Join-Path $projectRoot "requirements-dev.txt")
+    $npm = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $npm) {
+        throw "npm.cmd was not found. Repair your Node.js installation, then reopen the launcher."
+    }
+    $requirementsFile = if ($RuntimeDepsOnly) { "requirements.txt" } else { "requirements-dev.txt" }
+    & $python -m pip install -r (Join-Path $projectRoot $requirementsFile)
     if ($LASTEXITCODE -ne 0) {
         throw "Python dependency installation failed."
     }
-    & npm --prefix $frontendDirectory ci
+    & $npm.Source --prefix $frontendDirectory ci
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend dependency installation failed."
     }
 }
-if (-not (Test-Path -LiteralPath (Join-Path $frontendDirectory "node_modules"))) {
+if (-not (Test-Path -LiteralPath (Join-Path $frontendDirectory "node_modules\vite\bin\vite.js"))) {
     throw "Missing frontend dependencies. Run .\run_demo.ps1 -InstallDeps once."
 }
 
 Import-DotEnv -Path (Join-Path $projectRoot ".env")
 $apiBaseUrl = "http://127.0.0.1:$ApiPort"
 $frontendUrl = "http://127.0.0.1:$UserUiPort"
+Set-DemoCorsOrigins -FrontendPort $UserUiPort
 Set-DefaultEnvironmentValue "DEMO_LOGIN_PASSWORD" "demo-password"
 Set-DefaultEnvironmentValue "DEMO_AUTH_SECRET" "local-demo-secret-change-before-sharing"
 Set-DefaultEnvironmentValue "WORKFLOW_DB" (Join-Path $stateDirectory "workflow.db")
@@ -207,6 +322,8 @@ $env:PYTHONUNBUFFERED = "1"
 
 $apiProcess = $null
 $frontendProcess = $null
+Assert-DemoPortAvailable -Port $ApiPort -Name "API" -Option "ApiPort"
+Assert-DemoPortAvailable -Port $UserUiPort -Name "Frontend" -Option "UserUiPort"
 try {
     $apiProcess = Start-DemoProcess `
         -Name "api" `
@@ -217,7 +334,7 @@ try {
     $frontendProcess = Start-DemoProcess `
         -Name "frontend" `
         -FilePath $node `
-        -ArgumentList @("node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "$UserUiPort") `
+        -ArgumentList @("node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "$UserUiPort", "--strictPort") `
         -WorkingDirectory $frontendDirectory `
         -LogDirectory $logDirectory
 

@@ -1,5 +1,11 @@
+import {
+  ArrowRight,
+  ChatCircle,
+  FilePlus,
+  PaperPlaneTilt,
+  SpinnerGap,
+} from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, FileCheck2, LoaderCircle, MessageCircleQuestion, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamChat } from "../../api/client";
 import type {
@@ -9,11 +15,13 @@ import type {
   WorkflowRequest,
 } from "../../api/types";
 import { useAuth } from "../../app/providers";
+import { BrandMark } from "../../components/BrandMark";
 import { Shell } from "../../components/Shell";
 import { Button } from "../../components/ui";
 import { RequestDrawer } from "../requests/RequestDrawer";
 import { ChatMessageItem } from "./ChatMessageItem";
 import { restoreConversationMessages } from "./conversationPresentation";
+import { DeleteChatDialog } from "./DeleteChatDialog";
 import { EmployeeRequestDetails } from "./EmployeeRequestDetails";
 import { EmployeeSidebar } from "./EmployeeSidebar";
 
@@ -28,7 +36,7 @@ const hello: ChatMessage = {
   id: "hello",
   role: "assistant",
   content:
-    "Good morning. I can answer policy questions with evidence, or turn a clear action into a request you review before sending.",
+    "Ask about your company’s policies, plan time off, or get help from HR. I’ll find the context and help with the next step.",
 };
 
 export function EmployeePage() {
@@ -43,11 +51,28 @@ export function EmployeePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [requestDraft, setRequestDraft] = useState<WorkflowRequest | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ConversationSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteTrigger = useRef<HTMLButtonElement | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const followMessages = useRef(true);
   const loadSequence = useRef(0);
   const userId = user?.id ?? "employee";
   const conversationStorageKey = `peopleflow.active-conversation.${userId}`;
+
+  useEffect(() => {
+    if (!composer.current) return;
+    composer.current.style.height = "auto";
+    composer.current.style.height = `${draft ? Math.min(composer.current.scrollHeight, 160) : 42}px`;
+  }, [draft]);
+
+  useEffect(() => {
+    if (messages.length && followMessages.current)
+      bottom.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, [messages]);
 
   const conversations = useQuery({
     queryKey: ["conversations", userId],
@@ -65,6 +90,7 @@ export function EmployeePage() {
     setConversationNotice("");
     setMessages([hello]);
     setDraft("");
+    followMessages.current = true;
     localStorage.removeItem(conversationStorageKey);
     requestAnimationFrame(() => {
       window.scrollTo({ top: 0, behavior: "auto" });
@@ -81,6 +107,8 @@ export function EmployeePage() {
       setConversationLoading(true);
       setConversationNotice("");
       setMessages([hello]);
+      setDraft("");
+      followMessages.current = true;
       try {
         const detail = await api<ConversationDetail>(`/api/v1/conversations/${id}`, token);
         if (sequence !== loadSequence.current) return;
@@ -121,6 +149,7 @@ export function EmployeePage() {
   const send = async (text = draft) => {
     const prompt = text.trim();
     if (!prompt || sending || conversationLoading) return;
+    followMessages.current = true;
 
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -185,12 +214,7 @@ export function EmployeePage() {
                   : message,
               ),
             );
-            if (event.workflow_request) {
-              setRequestDraft(event.workflow_request);
-              setDrawerOpen(true);
-            }
           }
-          bottom.current?.scrollIntoView({ behavior: "smooth" });
         },
         conversationId ?? undefined,
       );
@@ -210,6 +234,34 @@ export function EmployeePage() {
     } finally {
       setSending(false);
       void queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
+      void queryClient.invalidateQueries({ queryKey: ["requests", userId] });
+    }
+  };
+
+  const deleteConversation = async () => {
+    if (!deleteTarget || deleting || sending) return;
+    const id = deleteTarget.id;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api<void>(`/api/v1/conversations/${encodeURIComponent(id)}`, token, {
+        method: "DELETE",
+      });
+      await queryClient.cancelQueries({ queryKey: ["conversations", userId] });
+      queryClient.setQueryData<{ conversations: ConversationSummary[] }>(
+        ["conversations", userId],
+        (current) =>
+          current && { conversations: current.conversations.filter((chat) => chat.id !== id) },
+      );
+      if (conversationId === id) startNewChat();
+      setDeleteTarget(null);
+      void queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Couldn't delete this chat. Try again.",
+      );
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -223,89 +275,128 @@ export function EmployeePage() {
       requestsError={requests.isError}
       activeConversationId={conversationId}
       sending={sending}
+      onNewChat={startNewChat}
       onNewRequest={openNewRequest}
       onOpenConversation={(id) => void openConversation(id)}
+      onDeleteConversation={(conversation, trigger) => {
+        deleteTrigger.current = trigger;
+        setDeleteError("");
+        setDeleteTarget(conversation);
+      }}
       onOpenRequest={openRequest}
     />
   );
 
+  const activeTitle = conversations.data?.conversations.find(
+    (item) => item.id === conversationId,
+  )?.title;
+  const visibleMessages = messages.filter((message) => message.id !== "hello");
+
   return (
     <Shell
       sidebar={sidebar}
-      eyebrow="Employee workspace"
+      eyebrow={activeTitle ?? (visibleMessages.length ? "Conversation" : "New Chat")}
       onLogoClick={startNewChat}
       logoDisabled={sending}
     >
-      <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-5xl flex-col px-4 sm:px-8">
-        <div className="flex-1 py-8 sm:py-12">
-          {conversationNotice && (
-            <div
-              role="status"
-              className="mb-6 rounded-xl border border-coral/20 bg-coral/5 px-4 py-3 text-sm text-coral"
-            >
-              {conversationNotice}
-            </div>
-          )}
-          {conversationLoading ? (
-            <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-muted">
-              <LoaderCircle className="animate-spin text-lime" size={18} />
-              Opening conversation…
-            </div>
-          ) : (
-            <>
-              {messages.length === 1 && (
-                <section className="mb-10">
-                  <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-lime">
-                    <Sparkles size={15} />
-                    Suggested actions
-                  </div>
-                  <h1 className="max-w-2xl text-4xl font-medium tracking-[-.035em] sm:text-5xl">
-                    What can we make easier today?
-                  </h1>
-                  <div className="mt-7 grid gap-3 sm:grid-cols-2">
+      <div className="chat-workspace">
+        <div
+          className="chat-scroll scrollbar"
+          ref={scroller}
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            followMessages.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+          }}
+        >
+          <div className="chat-thread">
+            {conversationNotice && (
+              <div
+                role="status"
+                className="mb-6 rounded-md border border-warning/20 bg-warning/5 px-4 py-3 text-sm text-warning"
+              >
+                {conversationNotice}
+              </div>
+            )}
+            {conversationLoading ? (
+              <div
+                className="flex min-h-64 items-center justify-center gap-3 text-sm text-muted"
+                role="status"
+              >
+                <SpinnerGap className="animate-spin text-accent" size={20} />
+                Opening conversation…
+              </div>
+            ) : visibleMessages.length ? (
+              <div>
+                {visibleMessages.map((message) => (
+                  <ChatMessageItem
+                    key={message.id}
+                    message={
+                      message.workflow
+                        ? {
+                            ...message,
+                            workflow:
+                              requests.data?.requests.find(
+                                (request) => request.id === message.workflow?.id,
+                              ) ?? message.workflow,
+                          }
+                        : message
+                    }
+                    onOpenRequest={openRequest}
+                  />
+                ))}
+              </div>
+            ) : (
+              <section className="mx-auto max-w-2xl py-6 sm:py-12">
+                <div className="assistant-avatar mb-5">
+                  <BrandMark size={28} />
+                </div>
+                <h2 className="text-2xl font-medium tracking-tight">How can I help?</h2>
+                <p className="mt-3 max-w-lg text-sm leading-7 text-muted">{hello.content}</p>
+                <div className="mt-8 border-t border-line pt-5">
+                  <h3 className="mb-3 text-xs font-medium text-muted">A few things you can ask</h3>
+                  <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
                     {suggestions.map(([label, prompt]) => (
                       <button
                         key={label}
                         type="button"
                         onClick={() => void send(prompt)}
-                        className="focus-ring group rounded-2xl border border-line bg-panel p-4 text-left transition hover:-translate-y-0.5 hover:border-lime/35 hover:bg-raised"
+                        className="focus-ring group flex items-center justify-between gap-3 rounded-md px-3 py-3 text-left text-sm text-muted transition-colors hover:bg-panel hover:text-cream"
                       >
-                        <span className="text-xs font-semibold text-coral">{label}</span>
-                        <span className="mt-2 block text-sm leading-6 text-muted group-hover:text-cream">
-                          {prompt}
-                        </span>
+                        <span>{label}</span>
+                        <ArrowRight size={16} className="text-muted group-hover:text-accent" />
                       </button>
                     ))}
                   </div>
-                </section>
-              )}
-              <div className="space-y-7">
-                {messages.map((message) => (
-                  <ChatMessageItem key={message.id} message={message} onOpenRequest={openRequest} />
-                ))}
-                <div ref={bottom} />
-              </div>
-            </>
-          )}
+                </div>
+              </section>
+            )}
+            <div ref={bottom} />
+          </div>
         </div>
-
-        <div className="sticky bottom-0 pb-5 pt-3">
-          <div className="mx-auto w-full max-w-3xl">
-            <div className="mb-2 flex gap-1 px-1">
-              <Button tone="ghost" className="rounded-lg px-3 text-xs" onClick={openNewRequest}>
-                <FileCheck2 size={15} />
+        <div className="chat-composer-wrap">
+          <div className="chat-composer-inner">
+            <div className="mb-2 flex gap-1">
+              <Button tone="ghost" className="min-h-8 px-2 text-xs" onClick={openNewRequest}>
+                <FilePlus size={16} />
                 Create request
               </Button>
               <Button
                 tone="ghost"
-                className="rounded-lg px-3 text-xs"
+                className="min-h-8 px-2 text-xs"
+                disabled={sending || conversationLoading}
                 onClick={() => void send("I need help from HR")}
               >
-                <MessageCircleQuestion size={15} />
+                <ChatCircle size={16} />
                 Ask HR
               </Button>
             </div>
-            <div className="soft-shadow flex items-end gap-2 rounded-2xl border border-line bg-raised p-2 transition-colors focus-within:border-lime/35 focus-within:bg-panel">
+            <form
+              className="chat-composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void send();
+              }}
+            >
               <textarea
                 rows={1}
                 ref={composer}
@@ -314,23 +405,29 @@ export function EmployeePage() {
                 disabled={conversationLoading}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault();
                     void send();
                   }
                 }}
-                placeholder="What do you need help with?"
-                className="max-h-36 min-h-11 flex-1 resize-none overflow-y-auto bg-transparent px-3 py-3 text-[15px] leading-5 outline-none placeholder:text-muted/75 disabled:cursor-wait disabled:opacity-60"
+                placeholder="Message PeopleFlow…"
               />
-              <Button
-                aria-label="Send message"
-                className="h-11 w-11 shrink-0 rounded-full px-0"
+              <button
+                type="submit"
+                aria-label={sending ? "Sending message" : "Send message"}
                 disabled={sending || conversationLoading || !draft.trim()}
-                onClick={() => void send()}
+                className="icon-button mb-0.5 text-accent disabled:opacity-35"
               >
-                <ArrowUp size={24} strokeWidth={3} />
-              </Button>
-            </div>
+                {sending ? (
+                  <SpinnerGap className="animate-spin" size={23} />
+                ) : (
+                  <PaperPlaneTilt size={24} />
+                )}
+              </button>
+            </form>
+            <p className="mt-2.5 text-center text-[11px] leading-5 text-muted">
+              PeopleFlow can make mistakes. Check important details.
+            </p>
           </div>
         </div>
       </div>
@@ -349,6 +446,24 @@ export function EmployeePage() {
         }}
       />
       <EmployeeRequestDetails id={selectedRequest} onClose={() => setSelectedRequest(null)} />
+      <DeleteChatDialog
+        conversation={deleteTarget}
+        busy={deleting}
+        error={deleteError}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => void deleteConversation()}
+        onRestoreFocus={() => {
+          const trigger = deleteTrigger.current;
+          if (trigger?.isConnected && trigger.getClientRects().length) {
+            trigger.focus();
+            return;
+          }
+          const newChat = Array.from(
+            document.querySelectorAll<HTMLButtonElement>("[data-new-chat]"),
+          ).find((button) => button.getClientRects().length);
+          (newChat ?? composer.current)?.focus({ preventScroll: true });
+        }}
+      />
     </Shell>
   );
 }

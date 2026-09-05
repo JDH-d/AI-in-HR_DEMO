@@ -6,7 +6,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import closing
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from api.chat_adapter import to_chat_query, to_chat_response
@@ -49,6 +49,17 @@ def get_conversation(
                 identity.id,
             )
     return conversation
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_conversation(
+    conversation_id: str,
+    services: Services,
+    identity: DemoIdentity = Depends(require_roles("employee")),
+) -> Response:
+    if not services.conversations.delete_for_user(conversation_id, identity.id):
+        raise HTTPException(status_code=404, detail="The conversation could not be found.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/chat", response_model=ChatResponse)
