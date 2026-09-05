@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { RequestDetail } from "../../api/types";
 import { useAuth } from "../../app/providers";
-import { Badge, Drawer, formatStatus, statusTone } from "../../components/ui";
+import { Badge, Button, Drawer, formatStatus, statusTone } from "../../components/ui";
 import { DecisionNote, RequestOverview, RequestTimeline } from "../requests/RequestDetails";
 
 export function EmployeeRequestDetails({
@@ -27,19 +27,26 @@ export function EmployeeRequestDetails({
       title={request?.type_label ?? "Request details"}
       description={
         request?.type === "sick_leave"
-          ? "Your absence report, manager acknowledgement, and complete status history."
-          : "Your request, manager decision, and complete status history."
+          ? "Your availability and manager acknowledgement."
+          : "Your time off and manager decision."
       }
     >
-      {detail.isLoading && <p className="text-muted">Loading request…</p>}
-      {detail.isError && (
-        <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger">
-          Unable to load this request.
+      {detail.isLoading && (
+        <p role="status" className="py-4 text-sm text-muted">
+          Loading request…
         </p>
+      )}
+      {detail.isError && (
+        <div role="alert" className="rounded-lg border border-danger/25 bg-danger/5 p-4">
+          <p className="text-sm text-danger">Unable to load this request.</p>
+          <Button tone="secondary" className="mt-3" onClick={() => void detail.refetch()}>
+            Try again
+          </Button>
+        </div>
       )}
       {request && detail.data && (
         <div className="space-y-6">
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between border-b border-line pb-4">
             <Badge tone={statusTone(request.status)}>{formatStatus(request.status)}</Badge>
             <span className="text-xs text-muted">#{request.id.slice(0, 8)}</span>
           </div>

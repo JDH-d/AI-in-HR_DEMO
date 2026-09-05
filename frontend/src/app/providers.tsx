@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 import { login as loginRequest, parseStoredUser } from "../api/client";
 import type { Role, User } from "../api/types";
+import { ThemeProvider } from "./theme";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, retry: 1 } },
@@ -43,7 +44,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
   );
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+      <ThemeProvider>
+        <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

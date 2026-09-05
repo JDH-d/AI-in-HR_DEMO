@@ -99,6 +99,7 @@ export async function api<T>(path: string, token?: string, init: RequestInit = {
     const detail = errorDetail(payload);
     throw new ApiError(response.status, detail || `Request failed (${response.status})`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 

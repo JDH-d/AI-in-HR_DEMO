@@ -109,6 +109,18 @@ describe("parseStoredUser", () => {
 describe("api", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("accepts an empty successful DELETE response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      api<void>("/api/v1/conversations/chat-1", "token", { method: "DELETE" }),
+    ).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/conversations/chat-1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("surfaces FastAPI validation messages", async () => {
     vi.stubGlobal(
       "fetch",

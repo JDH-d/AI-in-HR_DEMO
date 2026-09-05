@@ -1,7 +1,7 @@
-import { CalendarCheck2, CalendarDays, Check, Clock3, HeartPulse, UserRound } from "lucide-react";
-import type { ReactNode } from "react";
+import { CalendarBlank, CalendarCheck, Check, Clock, Heart, User } from "@phosphor-icons/react";
+import { type ReactNode, useId } from "react";
 import type { RequestType } from "../../api/types";
-import { Badge, Card, fieldClass } from "../../components/ui";
+import { Badge, fieldClass } from "../../components/ui";
 import type { useRequestForm } from "./requestFormState";
 import { formatRequestDate } from "./requestPresentation";
 
@@ -15,11 +15,12 @@ export function RequestTypeField({
   onChange: (type: RequestType) => void;
 }) {
   return (
-    <label className="block text-xs font-semibold text-muted">
-      What do you need? *
+    <label className="block text-[13px] font-medium text-cream">
+      Request type
       <select
         className={`${fieldClass} mt-2`}
         value={type}
+        required
         onChange={(event) => {
           const value = event.target.value;
           if (value === "pto" || value === "sick_leave") onChange(value);
@@ -40,6 +41,8 @@ export function SickLeaveFields({
   onInteraction: () => void;
 }) {
   const { values } = form;
+  const returnErrorId = useId();
+  const hoursErrorId = useId();
   const update = (patch: Partial<typeof values>) => {
     form.update(patch);
     onInteraction();
@@ -47,11 +50,12 @@ export function SickLeaveFields({
 
   return (
     <>
-      <label className="block text-xs font-semibold text-muted">
+      <label className="block text-[13px] font-medium text-cream">
         First day away *
         <input
           className={`${fieldClass} mt-2`}
           type="date"
+          required
           value={values.start}
           onChange={(event) => {
             form.changeStart(event.target.value);
@@ -61,12 +65,12 @@ export function SickLeaveFields({
       </label>
 
       <fieldset>
-        <legend className="text-xs font-semibold text-muted">Expected back *</legend>
+        <legend className="text-[13px] font-medium text-cream">Expected back *</legend>
         <div className="mt-2 grid grid-cols-3 gap-2">
           <ChoiceButton
             active={values.returnMode === "default"}
             onClick={() => update({ returnMode: "default" })}
-            icon={<CalendarCheck2 size={16} />}
+            icon={<CalendarCheck size={18} />}
           >
             {values.timeAway === "partial_day" ? "Same day" : "Next day"}
           </ChoiceButton>
@@ -78,14 +82,14 @@ export function SickLeaveFields({
                 customReturn: values.customReturn || form.defaultReturn,
               })
             }
-            icon={<CalendarDays size={16} />}
+            icon={<CalendarBlank size={18} />}
           >
             Pick date
           </ChoiceButton>
           <ChoiceButton
             active={values.returnMode === "unknown"}
             onClick={() => update({ returnMode: "unknown" })}
-            icon={<Clock3 size={16} />}
+            icon={<Clock size={18} />}
           >
             Not sure
           </ChoiceButton>
@@ -93,6 +97,8 @@ export function SickLeaveFields({
         {values.returnMode === "date" && (
           <input
             aria-label="Expected return date"
+            aria-invalid={!form.returnIsValid}
+            aria-describedby={!form.returnIsValid ? returnErrorId : undefined}
             className={`${fieldClass} mt-3`}
             type="date"
             min={values.start || undefined}
@@ -101,7 +107,7 @@ export function SickLeaveFields({
           />
         )}
         {!form.returnIsValid && (
-          <p className="mt-2 text-xs text-danger">
+          <p id={returnErrorId} role="status" className="mt-2 text-xs text-danger">
             {values.timeAway === "full_day"
               ? "Choose a return date after the first day away."
               : "Expected return cannot be before the first day away."}
@@ -110,19 +116,19 @@ export function SickLeaveFields({
       </fieldset>
 
       <fieldset>
-        <legend className="text-xs font-semibold text-muted">Time away *</legend>
+        <legend className="text-[13px] font-medium text-cream">Time away *</legend>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <ChoiceButton
             active={values.timeAway === "full_day"}
             onClick={() => update({ timeAway: "full_day" })}
-            icon={<HeartPulse size={16} />}
+            icon={<Heart size={18} />}
           >
             Full day
           </ChoiceButton>
           <ChoiceButton
             active={values.timeAway === "partial_day"}
             onClick={() => update({ timeAway: "partial_day" })}
-            icon={<Clock3 size={16} />}
+            icon={<Clock size={18} />}
           >
             Part of day
           </ChoiceButton>
@@ -137,52 +143,55 @@ export function SickLeaveFields({
               max="24"
               step="0.5"
               value={values.partialHours}
+              aria-invalid={!form.hoursAreValid}
+              aria-describedby={!form.hoursAreValid ? hoursErrorId : undefined}
               onChange={(event) => update({ partialHours: event.target.value })}
             />
+            {!form.hoursAreValid && (
+              <span id={hoursErrorId} role="status" className="mt-2 block text-xs text-danger">
+                Enter a number of hours greater than 0 and up to 24.
+              </span>
+            )}
           </label>
         )}
       </fieldset>
 
-      <label className="block text-xs font-semibold text-muted">
+      <label className="block text-[13px] font-medium text-cream">
         Team note <span className="font-normal">(optional)</span>
         <textarea
-          className={`${fieldClass} mt-2 min-h-24 resize-none`}
+          className={`${fieldClass} mt-2 min-h-24 resize-y`}
           value={values.comment}
           onChange={(event) => update({ comment: event.target.value })}
           placeholder="Availability or handoff context."
         />
       </label>
 
-      <button
-        type="button"
-        role="switch"
-        aria-checked={values.extendedOrRecurring}
-        onClick={() => update({ extendedOrRecurring: !values.extendedOrRecurring })}
-        className="focus-ring flex w-full items-center justify-between gap-4 rounded-2xl border border-line bg-ink/45 p-4 text-left transition hover:border-lime/25 hover:bg-raised"
-      >
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-3.5 py-3">
+        <input
+          type="checkbox"
+          checked={values.extendedOrRecurring}
+          onChange={(event) => update({ extendedOrRecurring: event.target.checked })}
+          className="focus-ring mt-0.5 h-4 w-4 shrink-0 accent-accent"
+        />
         <span>
-          <strong className="block text-sm text-cream">This may be extended or recurring</strong>
+          <span className="block text-sm text-cream">This may be extended or recurring</span>
           <span className="mt-1 block text-xs leading-5 text-muted">
-            Flags a People Ops follow-up.
+            Ask People Ops to follow up.
           </span>
         </span>
-        <span
-          className={`relative h-7 w-12 shrink-0 rounded-full border transition ${values.extendedOrRecurring ? "border-lime/40 bg-lime" : "border-line bg-panel"}`}
-        >
-          <span
-            className={`absolute top-1 h-[18px] w-[18px] rounded-full transition ${values.extendedOrRecurring ? "left-[25px] bg-ink" : "left-1 bg-muted"}`}
-          />
-        </span>
-      </button>
+      </label>
 
-      <Card className="grid grid-cols-2 gap-4 bg-ink/50 p-4 text-xs">
+      <section
+        aria-label="Report preview"
+        className="grid grid-cols-2 gap-4 rounded-lg border border-line bg-ink p-4 text-xs"
+      >
         <Summary
-          icon={<CalendarDays size={16} />}
+          icon={<CalendarBlank size={18} />}
           label="First day"
           value={formatRequestDate(values.start || null)}
         />
         <Summary
-          icon={<CalendarCheck2 size={16} />}
+          icon={<CalendarCheck size={18} />}
           label="Expected back"
           value={
             values.returnMode === "unknown"
@@ -191,14 +200,14 @@ export function SickLeaveFields({
           }
         />
         <Summary
-          icon={<Clock3 size={16} />}
+          icon={<Clock size={18} />}
           label="Time away"
           value={
             values.timeAway === "partial_day" ? `${values.partialHours || "—"} hours` : "Full day"
           }
         />
-        <Summary icon={<UserRound size={16} />} label="Goes to" value="Your manager" />
-      </Card>
+        <Summary icon={<User size={18} />} label="Goes to" value="Your manager" />
+      </section>
     </>
   );
 }
@@ -211,6 +220,8 @@ export function PtoFields({
   onInteraction: () => void;
 }) {
   const { values } = form;
+  const datesErrorId = useId();
+  const datesInvalid = Boolean(values.start && values.end && values.end < values.start);
   const update = (patch: Partial<typeof values>) => {
     form.update(patch);
     onInteraction();
@@ -219,16 +230,17 @@ export function PtoFields({
   return (
     <>
       <fieldset>
-        <legend className="text-xs font-semibold text-muted">When will you be away? *</legend>
-        <p className="mt-1 text-[11px] leading-5 text-muted">
+        <legend className="text-[13px] font-medium text-cream">When will you be away? *</legend>
+        <p className="mt-1 text-xs leading-5 text-muted">
           Choose the first and last calendar day of your time off.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="text-xs font-semibold text-muted">
+          <label className="text-[13px] font-medium text-cream">
             First day
             <input
               className={`${fieldClass} mt-2`}
               type="date"
+              required
               value={values.start}
               onChange={(event) => {
                 form.changeStart(event.target.value);
@@ -236,33 +248,36 @@ export function PtoFields({
               }}
             />
           </label>
-          <label className="text-xs font-semibold text-muted">
+          <label className="text-[13px] font-medium text-cream">
             Last day
             <input
               className={`${fieldClass} mt-2`}
               type="date"
+              required
               min={values.start || undefined}
               value={values.end}
+              aria-invalid={datesInvalid}
+              aria-describedby={datesInvalid ? datesErrorId : undefined}
               onChange={(event) => update({ end: event.target.value })}
             />
           </label>
         </div>
-        {values.start && values.end && values.end < values.start && (
-          <p className="mt-2 text-xs text-danger">The last day cannot be before the first day.</p>
+        {datesInvalid && (
+          <p id={datesErrorId} role="status" className="mt-2 text-xs text-danger">
+            The last day cannot be before the first day.
+          </p>
         )}
 
         <div className="mt-4 flex items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold text-muted">Quick length</p>
-            <p className="mt-1 text-[11px] text-muted">
+            <p className="text-[13px] font-medium text-cream">Quick length</p>
+            <p className="mt-1 text-xs text-muted">
               {values.start
                 ? "Counted from your first day."
                 : "Choose a first day to use a shortcut."}
             </p>
           </div>
-          <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted">
-            Calendar days
-          </span>
+          <span className="shrink-0 text-xs text-muted">Calendar days</span>
         </div>
         <div className="mt-2 grid grid-cols-3 gap-2">
           {[1, 3, 7].map((days) => (
@@ -280,24 +295,28 @@ export function PtoFields({
         </div>
       </fieldset>
 
-      <label className="block text-xs font-semibold text-muted">
+      <label className="block text-[13px] font-medium text-cream">
         Planning note *
-        <span className="mt-1 block text-[11px] font-normal leading-5">
+        <span className="mt-1 block text-xs font-normal leading-5">
           Keep it brief — timing or handoff context is enough.
         </span>
         <textarea
-          className={`${fieldClass} mt-2 min-h-24 resize-none`}
+          className={`${fieldClass} mt-2 min-h-24 resize-y`}
           value={values.comment}
+          required
           onChange={(event) => update({ comment: event.target.value })}
           placeholder="For example: Planned time off — I’ll hand over current work before I go."
         />
       </label>
 
-      <Card className="overflow-hidden bg-ink/50 p-0">
+      <section
+        aria-label="Request preview"
+        className="overflow-hidden rounded-lg border border-line bg-ink"
+      >
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
           <div>
-            <p className="text-xs font-semibold text-cream">Request preview</p>
-            <p className="mt-1 text-[11px] text-muted">This is what your manager will review.</p>
+            <h3 className="text-sm font-medium text-cream">Request preview</h3>
+            <p className="mt-1 text-xs text-muted">This is what your manager will review.</p>
           </div>
           <Badge tone={form.formIsReady ? "success" : "neutral"}>
             {form.formIsReady ? "ready" : "draft"}
@@ -306,7 +325,7 @@ export function PtoFields({
         <div className="grid grid-cols-2 gap-4 p-4 text-xs">
           <div className="col-span-2">
             <Summary
-              icon={<CalendarDays size={16} />}
+              icon={<CalendarBlank size={18} />}
               label="Dates"
               value={
                 form.ptoDatesAreValid
@@ -316,7 +335,7 @@ export function PtoFields({
             />
           </div>
           <Summary
-            icon={<Clock3 size={16} />}
+            icon={<Clock size={18} />}
             label="Time away"
             value={
               form.duration
@@ -324,9 +343,9 @@ export function PtoFields({
                 : "—"
             }
           />
-          <Summary icon={<Check size={16} />} label="Next step" value="Manager review" />
+          <Summary icon={<Check size={18} />} label="Next step" value="Manager review" />
         </div>
-      </Card>
+      </section>
     </>
   );
 }
@@ -347,9 +366,9 @@ function ChoiceButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`focus-ring flex min-h-16 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${active ? "border-lime/45 bg-lime-soft text-cream" : "border-line bg-ink/55 text-muted hover:border-lime/25 hover:text-cream"}`}
+      className={`focus-ring flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] transition ${active ? "border-accent/45 bg-accent-soft text-cream" : "border-line bg-panel text-muted hover:border-accent/25 hover:text-cream"}`}
     >
-      <span className={active ? "text-lime" : "text-muted"}>{icon}</span>
+      <span className={active ? "text-accent" : "text-muted"}>{icon}</span>
       {children}
     </button>
   );
@@ -372,7 +391,7 @@ function QuickLengthButton({
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
-      className={`focus-ring rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-35 ${active ? "border-lime/45 bg-lime-soft text-lime" : "border-line bg-ink/55 text-muted hover:border-lime/25 hover:text-cream"}`}
+      className={`focus-ring rounded-lg border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${active ? "border-accent/45 bg-accent-soft text-accent" : "border-line bg-panel text-muted hover:border-accent/25 hover:text-cream"}`}
     >
       {label}
     </button>
@@ -382,10 +401,10 @@ function QuickLengthButton({
 function Summary({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="flex gap-2 text-muted">
-      <span className="text-lime">{icon}</span>
+      <span className="text-accent">{icon}</span>
       <div className="min-w-0">
-        <span className="block text-[10px] uppercase tracking-wider">{label}</span>
-        <strong className="mt-1 block break-words text-cream">{value}</strong>
+        <span className="block text-xs">{label}</span>
+        <span className="mt-1 block break-words text-sm text-cream">{value}</span>
       </div>
     </div>
   );

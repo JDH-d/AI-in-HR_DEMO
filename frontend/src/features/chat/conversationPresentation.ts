@@ -25,8 +25,8 @@ export function conversationMeta(conversation: ConversationSummary, now = new Da
 export function workflowMessage(request: WorkflowRequest): string {
   if (request.status === "draft") {
     return request.type === "sick_leave"
-      ? "A sick leave report is ready. Nothing has been shared yet."
-      : "A request draft is ready. Nothing has been sent for review.";
+      ? "Your sick leave report is ready. Review your availability before sharing it with your manager."
+      : "I've prepared a PTO draft. Review the dates and planning note before sending it to your manager.";
   }
   if (request.status === "reported") return "Your sick leave was shared with your manager.";
   if (request.status === "in_review") return "Your time-off request is with your manager.";

@@ -1,8 +1,24 @@
-import { ChevronDown, Search, Sparkles } from "lucide-react";
+import { CalendarBlank, CaretDown, FileText } from "@phosphor-icons/react";
 import type { ChatMessage, WorkflowRequest } from "../../api/types";
-import { Badge, Button, Card } from "../../components/ui";
+import { BrandMark } from "../../components/BrandMark";
+import { Badge, Button, formatStatus, statusTone } from "../../components/ui";
 import { FeedbackButtons } from "../feedback/FeedbackButtons";
+import { formatRequestDate, timeAwayLabel } from "../requests/requestPresentation";
 import { workflowMessage } from "./conversationPresentation";
+
+function period(request: WorkflowRequest) {
+  if (!request.start_date) return "Dates to confirm";
+  if (!request.end_date || request.start_date === request.end_date)
+    return formatRequestDate(request.start_date);
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).formatRange(
+    new Date(`${request.start_date}T12:00:00`),
+    new Date(`${request.end_date}T12:00:00`),
+  );
+}
 
 export function ChatMessageItem({
   message,
@@ -11,72 +27,94 @@ export function ChatMessageItem({
   message: ChatMessage;
   onOpenRequest: (request: WorkflowRequest) => void;
 }) {
-  if (message.role === "user") {
-    return (
-      <div className="message-enter ml-auto max-w-[78%] rounded-2xl rounded-br-md bg-cream px-4 py-3 text-sm leading-6 text-ink">
-        {message.content}
-      </div>
-    );
-  }
+  if (message.role === "user")
+    return <div className="chat-message message-enter user-message">{message.content}</div>;
   const workflow = message.workflow;
-
+  const content = workflow && !message.error ? workflowMessage(workflow) : message.content;
   return (
-    <article className="message-enter max-w-3xl">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-lime text-ink">
-          <Sparkles size={14} />
-        </span>
-        <strong className="text-xs">PeopleFlow</strong>
-        {message.sources?.length ? <Badge tone="success">Grounded</Badge> : null}
+    <article
+      className="chat-message message-enter assistant-message"
+      aria-label="PeopleFlow response"
+    >
+      <div className="assistant-avatar">
+        <BrandMark size={28} />
       </div>
-      <div
-        className={`whitespace-pre-wrap text-[15px] leading-7 ${message.error ? "text-danger" : "text-cream"} ${message.streaming ? "token-caret" : ""}`}
-      >
-        {message.content || "Thinking with your company knowledge…"}
-      </div>
-      {workflow && (
-        <Card className="mt-4 border-coral/25 bg-coral/5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-coral">
-                {workflow.status === "draft" ? "Action detected" : "Request updated"}
-              </span>
-              <p className="mt-1 text-sm">{workflowMessage(workflow)}</p>
-            </div>
-            <Button onClick={() => onOpenRequest(workflow)}>
-              {workflow.status === "draft" ? "Review draft" : "View request"}
-            </Button>
-          </div>
-        </Card>
-      )}
-      {message.sources?.length ? (
-        <details className="group mt-4">
-          <summary className="focus-ring flex w-fit list-none items-center gap-2 rounded-lg py-2 text-xs font-semibold text-muted hover:text-cream">
-            <Search size={14} />
-            Sources · {message.sources.length}
-            <ChevronDown className="transition group-open:rotate-180" size={14} />
-          </summary>
-          <div className="mt-2 grid gap-3">
-            {message.sources.map((source) => (
-              <Card key={`${source.source}-${source.section}`} className="p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <strong className="text-xs">{source.title}</strong>
-                  <span className="text-[10px] text-muted">v{source.version}</span>
-                </div>
-                <p className="mt-1 text-[11px] text-coral">{source.section}</p>
-                <mark className="mt-3 block bg-lime/10 px-3 py-2 text-xs leading-6 text-cream">
-                  {source.excerpt}
-                </mark>
-              </Card>
-            ))}
-          </div>
-        </details>
-      ) : null}
-      {message.id !== "hello" && !message.streaming && !message.error && (
-        <div className="mt-3">
-          <FeedbackButtons question={message.question ?? ""} answer={message.content} />
+      <div className="min-w-0">
+        <div
+          className={`assistant-copy whitespace-pre-wrap break-words ${message.error ? "text-danger" : "text-cream"} ${message.streaming ? "token-caret" : ""}`}
+          role={message.error ? "alert" : undefined}
+        >
+          {content || "Looking through your company knowledge…"}
         </div>
-      )}
+        {!!message.sources?.length && (
+          <details className="source-disclosure">
+            <summary className="source-summary focus-ring">
+              <FileText size={16} className="shrink-0" />
+              <span className="max-w-60 truncate">
+                {message.sources.length === 1
+                  ? message.sources[0].title
+                  : `${message.sources.length} sources`}
+              </span>
+              <span className="text-success">·</span>
+              <span>{message.sources.length === 1 ? "Source" : "View"}</span>
+              <CaretDown className="source-caret ml-1" size={13} />
+            </summary>
+            <div className="mt-3 divide-y divide-line rounded-md border border-line bg-panel px-4">
+              {message.sources.map((source) => (
+                <section key={`${source.source}-${source.section}`} className="py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-xs font-medium">{source.title}</h3>
+                    <span className="text-[11px] text-muted">v{source.version}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-accent">{source.section}</p>
+                  <blockquote className="mt-3 border-l-2 border-accent/40 pl-3 text-xs leading-6 text-muted">
+                    {source.excerpt}
+                  </blockquote>
+                </section>
+              ))}
+            </div>
+          </details>
+        )}
+        {workflow && (
+          <section className="request-inline" aria-label={`${workflow.type_label} request`}>
+            <div className="flex items-center gap-3 border-b border-line pb-3">
+              <FileText size={18} className="text-muted" />
+              <h3 className="flex-1 text-sm font-medium">{workflow.type_label}</h3>
+              <Badge tone={workflow.status === "draft" ? "neutral" : statusTone(workflow.status)}>
+                {formatStatus(workflow.status)}
+              </Badge>
+            </div>
+            <div className="my-4 flex items-start gap-3">
+              <CalendarBlank size={24} className="mt-0.5 shrink-0 text-muted" />
+              <div className="min-w-0">
+                <p className="text-xl font-semibold tracking-tight">{period(workflow)}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {workflow.type === "sick_leave"
+                    ? timeAwayLabel(workflow)
+                    : workflow.duration_days
+                      ? `${workflow.duration_days} calendar ${workflow.duration_days === 1 ? "day" : "days"}`
+                      : "Duration to confirm"}
+                </p>
+                {workflow.comment && (
+                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted">
+                    {workflow.comment}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="border-t border-line pt-3">
+              <Button onClick={() => onOpenRequest(workflow)}>
+                {workflow.status === "draft" ? "Review request" : "View request"}
+              </Button>
+            </div>
+          </section>
+        )}
+        {message.id !== "hello" && !message.streaming && !message.error && (
+          <div className="mt-2">
+            <FeedbackButtons question={message.question ?? ""} answer={content} />
+          </div>
+        )}
+      </div>
     </article>
   );
 }

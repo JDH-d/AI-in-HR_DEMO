@@ -1,12 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
 import {
-  BarChart3,
+  ArrowsClockwise,
   BookOpen,
-  type LucideIcon,
-  MessageSquareWarning,
-  RefreshCw,
-  Settings2,
-} from "lucide-react";
+  ChartBar,
+  ChatCircleDots,
+  type Icon,
+  SlidersHorizontal,
+} from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../../api/client";
 import type { Metrics } from "../../api/types";
@@ -20,16 +20,24 @@ import { QualityPanel } from "./QualityPanel";
 
 type Section = "overview" | "documents" | "quality" | "settings";
 
-const navigation: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: "overview", label: "Overview", icon: BarChart3 },
+const navigation: { id: Section; label: string; icon: Icon }[] = [
+  { id: "overview", label: "Overview", icon: ChartBar },
   { id: "documents", label: "Documents", icon: BookOpen },
-  { id: "quality", label: "Quality", icon: MessageSquareWarning },
-  { id: "settings", label: "AI settings", icon: Settings2 },
+  { id: "quality", label: "Quality", icon: ChatCircleDots },
+  { id: "settings", label: "AI settings", icon: SlidersHorizontal },
 ];
+
+const descriptions: Record<Section, string> = {
+  overview: "A quick view of employee questions, answer quality, and requests.",
+  documents: "Manage the company policies and documents your assistant uses.",
+  quality: "Review employee feedback and questions that need better sources.",
+  settings: "Adjust how the assistant responds and try changes before applying them.",
+};
 
 export function KnowledgePage() {
   const { token } = useAuth();
   const [section, setSection] = useState<Section>("overview");
+  const [settingsVisited, setSettingsVisited] = useState(false);
   const metrics = useQuery({
     queryKey: ["metrics"],
     queryFn: () => api<{ metrics: Metrics }>("/api/v1/admin/metrics", token),
@@ -42,10 +50,14 @@ export function KnowledgePage() {
         <button
           type="button"
           key={id}
-          onClick={() => setSection(id)}
-          className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm ${section === id ? "bg-lime-soft text-lime" : "text-muted hover:bg-raised hover:text-cream"}`}
+          onClick={() => {
+            setSection(id);
+            if (id === "settings") setSettingsVisited(true);
+          }}
+          aria-current={section === id ? "page" : undefined}
+          className={`focus-ring flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition ${section === id ? "bg-accent-soft font-medium text-accent" : "text-muted hover:bg-raised hover:text-cream"}`}
         >
-          <Icon className="h-4 w-4" />
+          <Icon size={20} />
           {label}
         </button>
       ))}
@@ -54,17 +66,19 @@ export function KnowledgePage() {
 
   return (
     <Shell sidebar={sidebar} eyebrow="Knowledge operations">
-      <div className="mx-auto max-w-7xl p-4 sm:p-8">
-        <div className="mb-8 flex items-end justify-between gap-4">
+      <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+        <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[.18em] text-lime">
-              Knowledge health
-            </p>
-            <h1 className="mt-3 text-4xl font-medium tracking-[-.035em]">{title}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted">{descriptions[section]}</p>
           </div>
           {section === "overview" && (
-            <Button tone="secondary" onClick={() => metrics.refetch()}>
-              <RefreshCw size={15} />
+            <Button
+              tone="secondary"
+              onClick={() => metrics.refetch()}
+              disabled={metrics.isFetching}
+            >
+              <ArrowsClockwise size={18} className={metrics.isFetching ? "animate-spin" : ""} />
               Refresh
             </Button>
           )}
@@ -83,7 +97,7 @@ export function KnowledgePage() {
                 The latest workspace summary is unavailable.
               </p>
               <Button className="mt-5" tone="secondary" onClick={() => metrics.refetch()}>
-                <RefreshCw size={15} />
+                <ArrowsClockwise size={18} />
                 Try again
               </Button>
             </div>
@@ -99,7 +113,11 @@ export function KnowledgePage() {
             onAddSource={() => setSection("documents")}
           />
         )}
-        {section === "settings" && <AISettingsPanel />}
+        {settingsVisited && (
+          <div hidden={section !== "settings"}>
+            <AISettingsPanel />
+          </div>
+        )}
       </div>
     </Shell>
   );

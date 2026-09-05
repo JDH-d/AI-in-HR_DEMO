@@ -1,5 +1,12 @@
+import {
+  ArrowCounterClockwise,
+  ArrowsClockwise,
+  FloppyDisk,
+  Play,
+  SlidersHorizontal,
+  Warning,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Play, RefreshCw, RotateCcw, Save, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { AISettings, AISettingsResponse, AISettingsTestResult } from "../../api/types";
@@ -129,13 +136,13 @@ export function AISettingsPanel() {
     return (
       <Card className="grid min-h-80 place-items-center text-center">
         <div>
-          <AlertTriangle className="mx-auto text-danger" />
+          <Warning className="mx-auto text-danger" />
           <h2 className="mt-3 font-semibold">Unable to load AI settings</h2>
           <p className="mt-2 text-sm text-muted">
             The saved assistant configuration could not be retrieved.
           </p>
           <Button className="mt-5" tone="secondary" onClick={() => loaded.refetch()}>
-            <RefreshCw size={15} />
+            <ArrowsClockwise size={18} />
             Try again
           </Button>
         </div>
@@ -145,17 +152,17 @@ export function AISettingsPanel() {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1.05fr_.95fr]">
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-line p-5">
+          <div className="border-b border-line px-5 py-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="font-semibold">Assistant controls</h2>
-                <p className="mt-1 text-xs text-muted">
-                  Six high-impact settings with safe defaults.
+                <h2 className="text-sm font-semibold">Assistant controls</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Answer style, sources, and document indexing.
                 </p>
               </div>
-              <Badge tone={dirty ? "warning" : "success"}>{dirty ? "Unsaved" : "Live"}</Badge>
+              <Badge tone={dirty ? "warning" : "success"}>{dirty ? "Unsaved" : "Saved"}</Badge>
             </div>
           </div>
           <div className="divide-y divide-line">
@@ -171,20 +178,19 @@ export function AISettingsPanel() {
           </div>
         </Card>
 
-        <Card className="flex min-h-[520px] flex-col border-lime/15 bg-lime-soft/20">
+        <Card className="flex flex-col">
           <div className="flex items-start gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-lime text-ink">
-              <Play size={17} />
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+              <Play size={18} />
             </div>
             <div>
-              <h2 className="font-semibold">Test before applying</h2>
-              <p className="mt-1 text-xs leading-5 text-muted">
-                Runs against the current knowledge base with your unsaved switches and prompt. It
-                creates no request and writes no chat log.
+              <h2 className="text-sm font-semibold">Test before applying</h2>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                Preview an answer using your current changes and company documents.
               </p>
             </div>
           </div>
-          <label className="mt-6 block text-xs font-semibold text-muted">
+          <label className="mt-5 block text-sm font-medium">
             Test question
             <textarea
               className={`${fieldClass} mt-2 min-h-24 resize-none`}
@@ -196,7 +202,7 @@ export function AISettingsPanel() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              className="text-xs text-muted hover:text-cream"
+              className="focus-ring rounded px-1 py-1 text-sm text-muted hover:text-accent"
               onClick={() => changeQuestion("When are salaries paid?")}
             >
               Payroll example
@@ -204,39 +210,37 @@ export function AISettingsPanel() {
             <span className="text-line">·</span>
             <button
               type="button"
-              className="text-xs text-muted hover:text-cream"
+              className="focus-ring rounded px-1 py-1 text-sm text-muted hover:text-accent"
               onClick={() => changeQuestion("How do I request VPN access?")}
             >
               IT example
             </button>
           </div>
           <Button
-            className="mt-5 w-full"
+            className="mt-4 self-start"
             onClick={() => preview.mutate()}
             disabled={!question.trim() || !prompt.trim() || preview.isPending}
           >
-            <Play size={16} />
+            <Play size={18} />
             {preview.isPending ? "Running preview…" : "Run test"}
           </Button>
           {preview.isError && (
-            <p className="mt-4 rounded-xl bg-danger/10 p-3 text-sm text-danger">
+            <p className="mt-4 rounded-lg bg-danger/10 p-3 text-sm text-danger">
               {preview.error instanceof Error ? preview.error.message : "Preview failed"}
             </p>
           )}
           {preview.data ? (
-            <div className="mt-5 flex-1 rounded-2xl border border-line bg-ink/70 p-5">
+            <div className="mt-5 rounded-lg border border-line bg-ink p-4" aria-live="polite">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-lime">
-                  Preview response
-                </p>
-                <span className="text-[10px] text-muted">
+                <p className="text-sm font-medium">Preview response</p>
+                <span className="text-xs text-muted">
                   {preview.data.latency_ms} ms ·{" "}
                   {settings.show_sources
                     ? `${preview.data.sources.length} sources`
                     : "sources hidden"}
                 </span>
               </div>
-              <p className="mt-4 whitespace-pre-wrap text-sm leading-7">{preview.data.answer}</p>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{preview.data.answer}</p>
               {previewSourceTitles.length > 0 && (
                 <div className="mt-4 border-t border-line pt-4 text-xs text-muted">
                   Evidence: {previewSourceTitles.slice(0, 2).join(" · ")}
@@ -244,12 +248,12 @@ export function AISettingsPanel() {
               )}
             </div>
           ) : (
-            <div className="mt-5 grid flex-1 place-items-center rounded-2xl border border-dashed border-line p-6 text-center">
+            <div className="mt-5 grid min-h-36 place-items-center rounded-lg border border-dashed border-line bg-ink p-5 text-center">
               <div>
-                <Play className="mx-auto text-muted" size={22} />
-                <p className="mt-3 text-sm font-semibold">Preview appears here</p>
-                <p className="mt-2 text-xs text-muted">
-                  Change a switch, adjust the prompt, and test before saving.
+                <Play className="mx-auto text-muted" size={20} />
+                <p className="mt-2 text-sm font-medium">Preview appears here</p>
+                <p className="mt-1 text-sm text-muted">
+                  Run a test to see your changes in a response.
                 </p>
               </div>
             </div>
@@ -257,15 +261,15 @@ export function AISettingsPanel() {
         </Card>
       </div>
 
-      <details className="group rounded-2xl border border-line bg-panel">
-        <summary className="focus-ring flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl p-5">
+      <details className="group rounded-lg border border-line bg-panel">
+        <summary className="focus-ring flex cursor-pointer list-none items-center justify-between gap-4 rounded-lg px-5 py-4">
           <div>
-            <p className="font-semibold">Advanced · System prompt</p>
-            <p className="mt-1 text-xs text-muted">
+            <p className="text-sm font-semibold">System prompt</p>
+            <p className="mt-1 text-sm text-muted">
               The core instruction applied to grounded answer generation.
             </p>
           </div>
-          <Settings2 className="text-muted transition group-open:rotate-90" size={18} />
+          <SlidersHorizontal className="text-muted transition group-open:rotate-90" size={18} />
         </summary>
         <div className="border-t border-line p-5">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -274,12 +278,13 @@ export function AISettingsPanel() {
               tone="ghost"
               onClick={() => loaded.data && changePrompt(loaded.data.default_system_prompt)}
             >
-              <RotateCcw size={14} />
+              <ArrowCounterClockwise size={18} />
               Reset to default
             </Button>
           </div>
           <textarea
             className={`${fieldClass} min-h-56 font-mono text-xs leading-6`}
+            aria-label="System prompt"
             value={prompt}
             onChange={(event) => changePrompt(event.target.value)}
           />
@@ -291,33 +296,36 @@ export function AISettingsPanel() {
       </details>
 
       {(save.isError || save.isSuccess || dirty) && (
-        <div className="sticky bottom-4 z-10 flex flex-col gap-3 rounded-2xl border border-line bg-panel/95 p-4 shadow-2xl backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <div
+          className="sticky bottom-4 z-10 flex flex-col gap-3 rounded-lg border border-line bg-panel p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+          aria-live="polite"
+        >
           <div>
             <p className={`text-sm font-semibold ${save.isError ? "text-danger" : ""}`}>
               {save.isError
                 ? "Settings were not applied"
                 : save.isSuccess && !dirty
                   ? "Settings applied"
-                  : "Review and apply changes"}
+                  : "You have unsaved changes"}
             </p>
             <p className="mt-1 text-xs text-muted">
               {save.isError
                 ? save.error instanceof Error
                   ? save.error.message
                   : "Try again after checking the API connection."
-                : "New settings affect future answers. Existing feedback and documents stay unchanged."}
+                : "Changes apply to new answers."}
             </p>
           </div>
           <div className="flex gap-2">
             <Button tone="secondary" onClick={reset} disabled={!dirty}>
-              <RotateCcw size={15} />
+              <ArrowCounterClockwise size={18} />
               Discard
             </Button>
             <Button
               onClick={() => save.mutate()}
               disabled={!dirty || !prompt.trim() || save.isPending}
             >
-              <Save size={15} />
+              <FloppyDisk size={18} />
               {save.isPending ? "Applying…" : "Apply settings"}
             </Button>
           </div>
@@ -339,10 +347,10 @@ function SettingToggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-5 p-5">
+    <div className="flex items-center justify-between gap-5 px-5 py-4">
       <div>
-        <p className="text-sm font-semibold">{label}</p>
-        <p className="mt-1 max-w-lg text-xs leading-5 text-muted">{copy}</p>
+        <p className="text-sm font-medium">{label}</p>
+        <p className="mt-1 max-w-lg text-sm leading-6 text-muted">{copy}</p>
       </div>
       <button
         type="button"
@@ -350,10 +358,10 @@ function SettingToggle({
         aria-checked={checked}
         aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`focus-ring relative h-7 w-12 shrink-0 rounded-full border transition ${checked ? "border-lime/40 bg-lime" : "border-line bg-ink"}`}
+        className={`focus-ring relative h-6 w-11 shrink-0 rounded-full border transition ${checked ? "border-accent bg-accent" : "border-line bg-raised"}`}
       >
         <span
-          className={`absolute top-1 h-4.5 w-4.5 rounded-full bg-ink transition ${checked ? "left-[25px]" : "left-1 bg-muted"}`}
+          className={`absolute top-0.5 h-4.5 w-4.5 rounded-full shadow-sm transition-all ${checked ? "left-[21px] bg-on-accent" : "left-0.5 bg-muted"}`}
         />
       </button>
     </div>

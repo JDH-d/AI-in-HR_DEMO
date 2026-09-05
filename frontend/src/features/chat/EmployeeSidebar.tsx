@@ -1,8 +1,8 @@
-import { MessageCircleQuestion, Plus } from "lucide-react";
-import type { ReactNode } from "react";
+import { ChatCircle, FileText, Plus, Trash } from "@phosphor-icons/react";
+import { useState } from "react";
 import type { ConversationSummary, WorkflowRequest } from "../../api/types";
-import { Badge, Button, formatStatus, statusTone } from "../../components/ui";
-import { requestPeriodLabel } from "../requests/requestPresentation";
+import { Badge, Button, formatStatus, Hint, statusTone } from "../../components/ui";
+import { formatRequestDate, requestPeriodLabel } from "../requests/requestPresentation";
 import { conversationMeta } from "./conversationPresentation";
 
 type EmployeeSidebarProps = {
@@ -14,8 +14,10 @@ type EmployeeSidebarProps = {
   requestsError: boolean;
   activeConversationId: string | null;
   sending: boolean;
+  onNewChat: () => void;
   onNewRequest: () => void;
   onOpenConversation: (id: string) => void;
+  onDeleteConversation: (conversation: ConversationSummary, trigger: HTMLButtonElement) => void;
   onOpenRequest: (request: WorkflowRequest) => void;
 };
 
@@ -28,102 +30,131 @@ export function EmployeeSidebar({
   requestsError,
   activeConversationId,
   sending,
+  onNewChat,
   onNewRequest,
   onOpenConversation,
+  onDeleteConversation,
   onOpenRequest,
 }: EmployeeSidebarProps) {
+  const [allRequests, setAllRequests] = useState(false);
   return (
     <>
-      <Button className="mb-5 w-full justify-start" onClick={onNewRequest}>
-        <Plus size={16} />
-        New request
+      <Button
+        tone="ghost"
+        className="w-full justify-start gap-3 px-4 py-2.5"
+        data-new-chat
+        disabled={sending}
+        onClick={onNewChat}
+      >
+        <Plus size={20} />
+        New Chat
       </Button>
-      <NavLabel>Recent conversations</NavLabel>
-      <nav className="space-y-1.5" aria-label="Conversation history">
-        {conversationsLoading &&
-          [0, 1, 2].map((item) => (
-            <div key={item} className="mx-2 h-12 animate-pulse rounded-xl bg-raised/70" />
-          ))}
+      <h2 className="nav-label">Recents</h2>
+      <nav className="space-y-1" aria-label="Conversation history">
+        {conversationsLoading && (
+          <p className="px-4 py-3 text-xs text-muted" role="status">
+            Loading conversations…
+          </p>
+        )}
         {conversationsError && (
-          <p className="rounded-xl border border-danger/20 bg-danger/5 px-3 py-3 text-xs leading-5 text-danger">
+          <p role="status" className="px-4 py-3 text-xs leading-5 text-danger">
             Conversation history is unavailable.
           </p>
         )}
         {!conversationsLoading && !conversationsError && conversations.length === 0 && (
-          <div className="rounded-xl border border-dashed border-line px-3 py-4 text-xs leading-5 text-muted">
-            Your conversations will appear here after the first reply.
-          </div>
+          <p className="px-4 py-2 text-xs leading-5 text-muted">
+            Your conversations will appear here.
+          </p>
         )}
-        {conversations.map((conversation) => {
-          const active = conversation.id === activeConversationId;
-          return (
+        {conversations.map((conversation) => (
+          <div key={conversation.id} className="conversation-row relative">
             <button
-              key={conversation.id}
               type="button"
               disabled={sending}
-              aria-current={active ? "page" : undefined}
+              aria-current={conversation.id === activeConversationId ? "page" : undefined}
               onClick={() => onOpenConversation(conversation.id)}
-              className={`focus-ring group flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2.5 text-left transition disabled:cursor-wait ${active ? "border-lime/20 bg-lime-soft/55 text-cream" : "border-transparent text-muted hover:border-line hover:bg-raised hover:text-cream"}`}
+              className="sidebar-row focus-ring pr-11 disabled:opacity-50"
+              title={`${conversation.title} · ${conversationMeta(conversation)}`}
             >
-              <span
-                className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${active ? "bg-lime/15 text-lime" : "bg-raised text-muted group-hover:text-cream"}`}
-              >
-                <MessageCircleQuestion size={15} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium">{conversation.title}</span>
-                <span className="mt-0.5 block truncate text-[10px] text-muted">
-                  {conversationMeta(conversation)}
-                </span>
-              </span>
-              {active && (
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-lime" aria-hidden="true" />
-              )}
+              <ChatCircle size={21} className="shrink-0" />
+              <span className="min-w-0 truncate text-sm">{conversation.title}</span>
             </button>
-          );
-        })}
+            <Hint label="Delete chat">
+              <button
+                type="button"
+                className="icon-button conversation-delete absolute right-1 top-1/2 -translate-y-1/2 hover:text-danger disabled:opacity-35"
+                aria-label={`Delete chat: ${conversation.title}`}
+                disabled={sending}
+                data-keep-navigation
+                onClick={(event) => onDeleteConversation(conversation, event.currentTarget)}
+              >
+                <Trash size={17} />
+              </button>
+            </Hint>
+          </div>
+        ))}
       </nav>
-
-      <NavLabel>My requests</NavLabel>
-      <div className="space-y-2">
-        {requestsLoading && <div className="mx-2 h-20 animate-pulse rounded-xl bg-raised/70" />}
+      <div className="mb-1 mt-7 flex items-center justify-between pl-3.5 pr-1">
+        <h2 className="text-[11px] font-medium uppercase tracking-[.065em] text-muted">
+          My requests
+        </h2>
+        <Hint label="New request">
+          <button
+            type="button"
+            aria-label="New request"
+            className="icon-button"
+            onClick={onNewRequest}
+          >
+            <Plus size={18} />
+          </button>
+        </Hint>
+      </div>
+      <nav aria-label="My requests" className="space-y-1">
+        {requestsLoading && (
+          <p className="px-4 py-3 text-xs text-muted" role="status">
+            Loading requests…
+          </p>
+        )}
         {requestsError && (
-          <p className="rounded-xl border border-danger/20 bg-danger/5 px-3 py-3 text-xs leading-5 text-danger">
+          <p className="px-4 py-3 text-xs leading-5 text-danger" role="status">
             Your requests are unavailable.
           </p>
         )}
-        {requests.slice(0, 4).map((request) => (
+        {(allRequests ? requests : requests.slice(0, 4)).map((request) => (
           <button
             key={request.id}
             type="button"
-            className="focus-ring w-full rounded-xl border border-line bg-ink/45 p-3 text-left transition hover:border-lime/30 hover:bg-raised"
+            className="sidebar-row focus-ring"
             onClick={() => onOpenRequest(request)}
             aria-label={`Open ${request.type_label} request, status ${formatStatus(request.status)}`}
+            title={requestPeriodLabel(request)}
           >
-            <div className="flex justify-between gap-2">
-              <span className="truncate text-xs font-semibold">{request.type_label}</span>
-              <Badge tone={statusTone(request.status)}>{formatStatus(request.status)}</Badge>
-            </div>
-            <p className="mt-2 truncate text-[11px] text-muted">{requestPeriodLabel(request)}</p>
-            {request.status === "declined" && (
-              <p className="mt-2 text-[11px] font-semibold text-danger">Open to see the reason</p>
-            )}
+            <FileText size={20} className="shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{request.type_label}</span>
+              <span className="mt-1 block truncate text-[11px] text-muted">
+                {request.start_date ? formatRequestDate(request.start_date) : "Dates to confirm"}
+              </span>
+            </span>
+            <Badge tone={statusTone(request.status)}>{formatStatus(request.status)}</Badge>
           </button>
         ))}
+        {requests.length > 4 && (
+          <button
+            type="button"
+            className="focus-ring ml-4 rounded py-2 text-xs text-muted hover:text-cream"
+            onClick={() => setAllRequests(!allRequests)}
+            data-keep-navigation
+          >
+            {allRequests ? "Show less" : `View all ${requests.length} requests`}
+          </button>
+        )}
         {!requestsLoading && !requestsError && requests.length === 0 && (
-          <p className="px-3 text-xs leading-5 text-muted">
-            Requests sent for review will stay visible here.
+          <p className="px-4 py-2 text-xs leading-5 text-muted">
+            Time off and absence reports stay here.
           </p>
         )}
-      </div>
+      </nav>
     </>
-  );
-}
-
-function NavLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="mb-2 mt-5 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-muted">
-      {children}
-    </div>
   );
 }

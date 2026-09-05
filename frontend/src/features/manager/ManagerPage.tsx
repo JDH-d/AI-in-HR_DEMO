@@ -1,5 +1,13 @@
+import {
+  CheckCircle,
+  Clock,
+  Funnel,
+  MagnifyingGlass,
+  ShieldCheck,
+  Tray,
+  XCircle,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock3, Filter, Inbox, Search, ShieldCheck, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../../api/client";
 import type { RequestDetail, WorkflowRequest } from "../../api/types";
@@ -46,38 +54,34 @@ export function ManagerPage() {
     [data, status, search],
   );
   const sidebar = (
-    <>
-      <Card className="mb-4 bg-lime-soft">
-        <p className="text-xs font-semibold text-lime">Manager queue</p>
-        <p className="mt-2 text-3xl font-medium">{requests.data ? counts.pending : "—"}</p>
-        <p className="text-xs text-muted">waiting for your attention</p>
-      </Card>
-      <p className="px-3 text-xs leading-5 text-muted">
-        Time-off requests need a decision. Sick leave only needs acknowledgement. Every action stays
-        in the timeline.
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 rounded-lg border border-line bg-panel px-3 py-3 text-sm">
+        <Tray size={20} className="text-accent" />
+        <span className="flex-1 font-medium">Team requests</span>
+        <span className="tabular-nums text-muted">{requests.data ? counts.pending : "—"}</span>
+      </div>
+      <p className="px-3 text-sm leading-6 text-muted">
+        Review time off and acknowledge sick leave from your team.
       </p>
-    </>
+    </div>
   );
 
   return (
     <Shell sidebar={sidebar} eyebrow="Manager inbox">
-      <div className="mx-auto max-w-7xl p-4 sm:p-8">
-        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+      <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+        <div className="flex flex-col justify-between gap-5 xl:flex-row xl:items-center">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[.18em] text-lime">
-              Request workspace
-            </p>
-            <h1 className="mt-3 text-4xl font-medium tracking-[-.035em]">Manager inbox</h1>
-            <p className="mt-2 text-sm text-muted">
-              Decide when needed. Acknowledge when approval is not the point.
+            <h1 className="text-2xl font-semibold tracking-tight">Manager inbox</h1>
+            <p className="mt-1.5 text-sm text-muted">
+              Time-off decisions and absence reports, in one place.
             </p>
           </div>
-          <div className="flex gap-3">
-            <Metric label="Open" value={requests.data ? counts.pending : "—"} icon={<Clock3 />} />
+          <div className="flex flex-wrap gap-x-5 gap-y-3">
+            <Metric label="Open" value={requests.data ? counts.pending : "—"} icon={<Clock />} />
             <Metric
               label="Completed"
               value={requests.data ? counts.completed : "—"}
-              icon={<CheckCircle2 />}
+              icon={<CheckCircle />}
             />
             <Metric
               label="Declined"
@@ -87,21 +91,24 @@ export function ManagerPage() {
           </div>
         </div>
 
-        <Card className="mt-8 overflow-hidden p-0">
+        <Card className="mt-6 overflow-hidden p-0">
           <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row">
             <label className="relative flex-1">
               <span className="sr-only">Search requests</span>
-              <Search className="absolute left-3 top-3 text-muted" size={17} />
+              <MagnifyingGlass
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                size={18}
+              />
               <input
                 className={`${fieldClass} pl-10`}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search requests"
+                placeholder="Search requests or employees"
               />
             </label>
             <label className="relative">
               <span className="sr-only">Filter requests by status</span>
-              <Filter className="absolute left-3 top-3 text-muted" size={16} />
+              <Funnel className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
               <select
                 className={`${fieldClass} min-w-44 pl-10`}
                 value={status}
@@ -136,9 +143,9 @@ export function ManagerPage() {
             {requests.isSuccess && (
               <table className="w-full min-w-[760px] text-left">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-wider text-muted">
+                  <tr className="bg-ink text-xs font-medium text-muted">
                     {["Request", "Employee", "Dates", "Status", "Created", ""].map((column) => (
-                      <th key={column} className="px-5 py-3 font-semibold">
+                      <th key={column} scope="col" className="px-5 py-3 font-medium">
                         {column}
                       </th>
                     ))}
@@ -148,14 +155,14 @@ export function ManagerPage() {
                   {rows.map((request) => (
                     <tr key={request.id} className="border-t border-line/70 hover:bg-raised/60">
                       <td className="px-5 py-4">
-                        <strong className="text-sm">{request.type_label}</strong>
+                        <strong className="text-sm font-medium">{request.type_label}</strong>
                         <p className="mt-1 max-w-xs truncate text-xs text-muted">
                           {request.comment ||
                             (request.type === "sick_leave" ? "No team note" : "No note")}
                         </p>
                       </td>
                       <td className="px-5 py-4 text-sm">{request.applicant}</td>
-                      <td className="px-5 py-4 text-xs text-muted">
+                      <td className="px-5 py-4 text-sm text-muted">
                         {requestPeriodLabel(request)}
                       </td>
                       <td className="px-5 py-4">
@@ -167,8 +174,12 @@ export function ManagerPage() {
                         {new Date(request.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-5 py-4">
-                        <Button tone="secondary" onClick={() => setSelected(request.id)}>
-                          Open
+                        <Button
+                          tone="secondary"
+                          aria-label={`Review ${request.type_label} from ${request.applicant}`}
+                          onClick={() => setSelected(request.id)}
+                        >
+                          Review
                         </Button>
                       </td>
                     </tr>
@@ -179,8 +190,27 @@ export function ManagerPage() {
             {requests.isSuccess && !rows.length && (
               <div className="grid min-h-52 place-items-center text-sm text-muted">
                 <div className="text-center">
-                  <Inbox className="mx-auto mb-2" />
-                  No requests match this view.
+                  <Tray className="mx-auto mb-3 text-muted" size={24} />
+                  <p className="font-medium text-cream">
+                    {data.length ? "No requests match this view" : "Your team is all caught up"}
+                  </p>
+                  <p className="mt-1.5 text-sm text-muted">
+                    {data.length
+                      ? "Try another search or status."
+                      : "New requests will appear here."}
+                  </p>
+                  {data.length > 0 && (
+                    <Button
+                      tone="ghost"
+                      className="mt-3"
+                      onClick={() => {
+                        setSearch("");
+                        setStatus("all");
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -207,11 +237,11 @@ function Metric({
   icon: React.ReactNode;
 }) {
   return (
-    <Card className="min-w-24 p-3">
-      <span className="text-muted [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
-      <strong className="mt-2 block text-xl">{value}</strong>
-      <span className="text-[10px] uppercase tracking-wider text-muted">{label}</span>
-    </Card>
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-muted [&>svg]:h-[18px] [&>svg]:w-[18px]">{icon}</span>
+      <span className="text-muted">{label}</span>
+      <strong className="font-semibold tabular-nums">{value}</strong>
+    </div>
   );
 }
 
@@ -265,9 +295,12 @@ function DecisionDialog({
     >
       {detail.isLoading && <p className="text-muted">Loading request…</p>}
       {detail.isError && (
-        <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger">
-          Unable to load this request.
-        </p>
+        <div className="rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <p className="text-sm text-danger">Unable to load this request.</p>
+          <Button className="mt-3" tone="secondary" onClick={() => detail.refetch()}>
+            Try again
+          </Button>
+        </div>
       )}
       {request && detail.data && (
         <div className="space-y-6">
@@ -278,19 +311,19 @@ function DecisionDialog({
           <RequestOverview request={request} />
           <DecisionNote detail={detail.data} />
           {request.status === "reported" && (
-            <section className="rounded-2xl border border-lime/20 bg-lime/5 p-5">
+            <section className="rounded-lg border border-line bg-ink p-4">
               <div className="flex gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-lime/12 text-lime">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent/12 text-accent">
                   <ShieldCheck size={18} />
                 </span>
                 <div>
-                  <h3 className="text-sm font-semibold">Acknowledge, don’t approve</h3>
-                  <p className="mt-1 text-xs leading-5 text-muted">
+                  <h3 className="text-sm font-semibold">Acknowledge absence</h3>
+                  <p className="mt-1 text-sm leading-6 text-muted">
                     Confirm you have seen the absence and can plan coverage.
                   </p>
                 </div>
               </div>
-              <label className="mt-5 block text-xs font-semibold text-muted">
+              <label className="mt-4 block text-sm font-medium">
                 Support note <span className="font-normal">(optional)</span>
                 <textarea
                   className={`${fieldClass} mt-2 min-h-20 resize-none`}
@@ -305,14 +338,14 @@ function DecisionDialog({
                 onClick={() => action.mutate("acknowledge")}
                 disabled={action.isPending}
               >
-                <CheckCircle2 size={16} />
+                <CheckCircle size={18} />
                 {action.isPending ? "Acknowledging…" : "Acknowledge absence"}
               </Button>
             </section>
           )}
           {request.status === "in_review" && (
-            <section className="rounded-2xl border border-line bg-ink/35 p-5">
-              <label className="block text-xs font-semibold text-muted">
+            <section className="rounded-lg border border-line bg-ink p-4">
+              <label className="block text-sm font-medium">
                 Decision note
                 <textarea
                   className={`${fieldClass} mt-2 min-h-24 resize-none`}
@@ -321,20 +354,22 @@ function DecisionDialog({
                   placeholder="Add context for the employee. A reason is required when declining."
                 />
               </label>
-              <p className="mt-2 text-[11px] text-muted">
+              <p className="mt-2 text-xs text-muted">
                 The employee will see this note with the final decision.
               </p>
               {error && <p className="mt-3 text-sm text-danger">{error}</p>}
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <Button onClick={() => action.mutate("approve")} disabled={action.isPending}>
-                  Approve
+                  <CheckCircle size={18} />
+                  {action.isPending && action.variables === "approve" ? "Approving…" : "Approve"}
                 </Button>
                 <Button
                   tone="danger"
                   onClick={() => action.mutate("decline")}
                   disabled={action.isPending || !comment.trim()}
                 >
-                  Decline
+                  <XCircle size={18} />
+                  {action.isPending && action.variables === "decline" ? "Declining…" : "Decline"}
                 </Button>
               </div>
             </section>

@@ -42,7 +42,8 @@ const emptyForm: RequestFormValues = {
 };
 
 export function useRequestForm(initial: WorkflowRequest | null | undefined) {
-  const [values, setValues] = useState<RequestFormValues>(() => valuesFromRequest(initial));
+  const [initialValues] = useState<RequestFormValues>(() => valuesFromRequest(initial));
+  const [values, setValues] = useState<RequestFormValues>(initialValues);
 
   const derived = useMemo(() => deriveRequestForm(values), [values]);
 
@@ -75,6 +76,7 @@ export function useRequestForm(initial: WorkflowRequest | null | undefined) {
 
   return {
     values,
+    isDirty: JSON.stringify(values) !== JSON.stringify(initialValues),
     ...derived,
     update,
     changeType,
@@ -146,6 +148,7 @@ export function deriveRequestForm(values: RequestFormValues) {
     expectedReturn,
     parsedHours,
     returnIsValid,
+    hoursAreValid,
     ptoDatesAreValid,
     duration,
     formIsReady,

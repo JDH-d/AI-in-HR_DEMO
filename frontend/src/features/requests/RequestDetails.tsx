@@ -1,4 +1,4 @@
-import { Clock3, MessageSquareText, ShieldCheck, Umbrella } from "lucide-react";
+import { ChatText, CheckCircle, Clock, ShieldCheck, Umbrella } from "@phosphor-icons/react";
 import type { RequestDetail, RequestEvent, WorkflowRequest } from "../../api/types";
 import { Card } from "../../components/ui";
 import {
@@ -18,17 +18,15 @@ function PtoOverview({ request }: { request: WorkflowRequest }) {
     ? `${request.duration_days} calendar ${request.duration_days === 1 ? "day" : "days"}`
     : "Not set";
   return (
-    <Card className="bg-ink/50">
+    <Card className="bg-ink">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-coral">
-            Approval request
-          </p>
+          <p className="text-[13px] font-medium text-muted">Approval request</p>
           <p className="mt-2 text-sm leading-6 text-muted">
             Planned time away with the dates and context needed for a clear decision.
           </p>
         </div>
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-coral/10 text-coral">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-raised text-muted">
           <Umbrella size={18} />
         </span>
       </div>
@@ -38,18 +36,18 @@ function PtoOverview({ request }: { request: WorkflowRequest }) {
         <Item label="First day" value={formatRequestDate(request.start_date)} />
         <Item label="Last day" value={formatRequestDate(request.end_date)} />
       </dl>
-      <div className="mt-5 border-t border-line pt-5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-          Planning note
-        </p>
+      <div className="mt-5 border-t border-line pt-4">
+        <p className="text-[13px] font-medium text-muted">Planning note</p>
         <p className={`mt-2 text-sm leading-6 ${request.comment ? "text-cream" : "text-muted"}`}>
           {request.comment || "No planning note was added."}
         </p>
       </div>
-      <div className="mt-4 flex gap-2 text-[11px] leading-5 text-muted">
-        <Clock3 className="mt-0.5 shrink-0 text-lime" size={14} />A manager decision is required
-        before this time off is approved.
-      </div>
+      {["draft", "in_review"].includes(request.status) && (
+        <div className="mt-4 flex gap-2 text-xs leading-5 text-muted">
+          <Clock className="mt-0.5 shrink-0 text-accent" size={18} />A manager decision is required
+          before this time off is approved.
+        </div>
+      )}
     </Card>
   );
 }
@@ -57,17 +55,15 @@ function PtoOverview({ request }: { request: WorkflowRequest }) {
 function SickLeaveOverview({ request }: { request: WorkflowRequest }) {
   const details = getSickLeaveDetails(request);
   return (
-    <Card className="bg-ink/50">
+    <Card className="bg-ink">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-lime">
-            Availability report
-          </p>
+          <p className="text-[13px] font-medium text-accent">Availability report</p>
           <p className="mt-2 text-sm leading-6 text-muted">
             This absence is shared for awareness and coverage, not approval.
           </p>
         </div>
-        <ShieldCheck className="shrink-0 text-lime" size={19} />
+        <ShieldCheck className="shrink-0 text-accent" size={19} />
       </div>
       <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
         <Item label="Employee" value={request.applicant} />
@@ -76,15 +72,15 @@ function SickLeaveOverview({ request }: { request: WorkflowRequest }) {
         <Item label="Time away" value={timeAwayLabel(request)} />
       </dl>
       {details.extendedOrRecurring && (
-        <div className="mt-5 rounded-xl border border-coral/25 bg-coral/8 px-4 py-3">
-          <p className="text-xs font-semibold text-coral">People Ops follow-up flagged</p>
+        <div className="mt-5 rounded-lg border border-warning/25 bg-warning/5 px-4 py-3">
+          <p className="text-xs font-semibold text-muted">People Ops follow-up flagged</p>
           <p className="mt-1 text-xs leading-5 text-muted">
             The employee indicated this absence may be extended or recurring.
           </p>
         </div>
       )}
-      <div className="mt-5 border-t border-line pt-5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Team note</p>
+      <div className="mt-5 border-t border-line pt-4">
+        <p className="text-[13px] font-medium text-muted">Team note</p>
         <p className={`mt-2 text-sm leading-6 ${request.comment ? "text-cream" : "text-muted"}`}>
           {request.comment || "No availability or handoff note was added."}
         </p>
@@ -101,17 +97,17 @@ export function DecisionNote({ detail }: { detail: RequestDetail }) {
     <section
       className={
         declined
-          ? "rounded-2xl border border-danger/25 bg-danger/10 p-5"
-          : "rounded-2xl border border-lime/20 bg-lime-soft p-5"
+          ? "rounded-lg border border-danger/25 bg-danger/10 p-5"
+          : "rounded-lg border border-accent/20 bg-accent-soft p-5"
       }
     >
       <div className="flex gap-3">
-        <MessageSquareText
-          className={declined ? "mt-0.5 shrink-0 text-danger" : "mt-0.5 shrink-0 text-lime"}
+        <ChatText
+          className={declined ? "mt-0.5 shrink-0 text-danger" : "mt-0.5 shrink-0 text-accent"}
           size={18}
         />
         <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
+          <h3 className="text-[13px] font-medium text-muted">
             {declined
               ? "Reason for decline"
               : detail.request.status === "acknowledged"
@@ -128,23 +124,20 @@ export function DecisionNote({ detail }: { detail: RequestDetail }) {
 export function RequestTimeline({ detail }: { detail: RequestDetail }) {
   return (
     <section>
-      <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Timeline</h3>
+      <h3 className="mb-4 text-[13px] font-medium text-muted">Timeline</h3>
       <div>
-        {detail.events.map((event, index) => {
+        {detail.events.map((event) => {
           const comment = eventComment(event);
           return (
-            <div key={event.id} className="relative flex gap-3 pb-5">
-              <div className="relative z-10 mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-lime" />
-              {index < detail.events.length - 1 && (
-                <div className="absolute left-[4px] top-3 h-full w-px bg-line" />
-              )}
+            <div key={event.id} className="flex gap-3 pb-5">
+              <CheckCircle size={18} className="mt-0.5 shrink-0 text-muted" />
               <div className="min-w-0">
-                <p className="text-sm font-semibold">{eventLabel(event)}</p>
+                <p className="text-sm font-medium">{eventLabel(event)}</p>
                 <p className="mt-1 text-xs text-muted">
                   {event.actor} · {new Date(event.created_at).toLocaleString()}
                 </p>
                 {comment && (
-                  <p className="mt-2 rounded-xl border border-line bg-ink/55 px-3 py-2 text-xs leading-5 text-cream">
+                  <p className="mt-2 rounded-lg border border-line bg-ink px-3 py-2 text-xs leading-5 text-cream">
                     {comment}
                   </p>
                 )}
@@ -154,13 +147,13 @@ export function RequestTimeline({ detail }: { detail: RequestDetail }) {
         })}
       </div>
       {detail.comments.length > 0 && (
-        <div className="mt-1 border-t border-line pt-5">
-          <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted">Comments</h3>
+        <div className="mt-1 border-t border-line pt-4">
+          <h3 className="mb-3 text-[13px] font-medium text-muted">Comments</h3>
           <div className="space-y-3">
             {detail.comments.map((comment) => (
-              <div key={comment.id} className="rounded-xl border border-line bg-ink/45 p-3">
+              <div key={comment.id} className="rounded-lg border border-line bg-ink p-3">
                 <p className="text-sm leading-6">{comment.body}</p>
-                <p className="mt-2 text-[11px] text-muted">
+                <p className="mt-2 text-xs text-muted">
                   {comment.author} · {new Date(comment.created_at).toLocaleString()}
                 </p>
               </div>
@@ -194,8 +187,8 @@ function eventLabel(event: RequestEvent): string {
 function Item({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-wider text-muted">{label}</dt>
-      <dd className="mt-1 break-words font-semibold">{value}</dd>
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="mt-1 break-words text-sm">{value}</dd>
     </div>
   );
 }
