@@ -1,9 +1,13 @@
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
+from rag.index import build_index_items
 from rag.nlp import Intent
+from rag.retriever import Retriever
 from services.chat_fallbacks import ChatFallbackPolicy
 from services.chat_models import ChatQuery, ChatTurn, RoutingDecision
+from services.document_reader import load_documents
 from services.llm_service import LLMServiceError
 from services.rag_service import RAGService
 
@@ -30,6 +34,43 @@ class RAGServiceTests(unittest.TestCase):
             fallback_policy=ChatFallbackPolicy(),
             knowledge_index=self.knowledge_index,
         )
+
+    def test_offline_process_answer_uses_instructions_instead_of_a_story(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        retriever = Retriever(
+            build_index_items(load_documents(root / "documents"), include_embeddings=False)
+        )
+        self.knowledge_index.get_retriever.return_value = retriever
+        outcome = self.rag_service.answer_with_retrieval(
+            ChatQuery(messages=[ChatTurn(role="user", content="How can I request time off?")]),
+            RoutingDecision(
+                language="en",
+                intent=Intent.WORK,
+                topic_selection=None,
+                explicit_topic_choice=False,
+                prior_topic=None,
+            ),
+        )
+        self.assertNotIn("typical operating example", outcome.content)
+        self.assertNotIn("customer success lead", outcome.content)
+        self.assertTrue(outcome.sources)
+        self.assertTrue(
+            "submit" in outcome.content.lower() or "request foreseeable" in outcome.content.lower(),
+            outcome.content,
+        )
+
+    def test_extractive_fallback_matches_words_and_keeps_operational_instructions(self) -> None:
+        result = self.rag_service._build_extractive_fallback(
+            "How should I request PTO?",
+            [
+                {
+                    "text": "A typical operating example is this: I request PTO during quarter close. "
+                    "Employees should request PTO ten business days in advance. "
+                    "An unrelated description has many instances of the letter i."
+                }
+            ],
+        )
+        self.assertEqual(result, "Employees should request PTO ten business days in advance.")
 
     def test_answer_with_retrieval_uses_extractive_fallback_when_llm_is_unavailable(self) -> None:
         query = ChatQuery(messages=[ChatTurn(role="user", content="How often are salaries paid?")])

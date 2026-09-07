@@ -5,3 +5,6 @@ python-dotenv==1.0.1
 pypdf==4.3.1
 python-docx==1.1.2
 python-multipart==0.0.9
+slack-bolt==1.30.0
+slack-sdk==3.44.1
+-e ./slack

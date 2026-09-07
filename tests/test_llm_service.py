@@ -12,7 +12,7 @@ class LLMServiceTests(unittest.TestCase):
         client = Mock()
         client.responses.create.return_value = Mock(output_text="Grounded answer")
         service = LLMService(
-            model="gpt-5-nano-2025-08-07",
+            model="gpt-5.6-luna",
             client_factory=lambda: client,
         )
         messages = [{"role": "user", "content": "Question"}]
@@ -21,7 +21,7 @@ class LLMServiceTests(unittest.TestCase):
 
         self.assertEqual(result, "Grounded answer")
         client.responses.create.assert_called_once_with(
-            model="gpt-5-nano-2025-08-07",
+            model="gpt-5.6-luna",
             input=messages,
             max_output_tokens=512,
             store=False,
@@ -87,11 +87,18 @@ class LLMServiceTests(unittest.TestCase):
             Mock(type="response.output_text.delta", delta="Complete answer"),
             Mock(type="response.completed"),
         )
-        service = LLMService(model="test-model", client_factory=lambda: client)
+        service = LLMService(model="gpt-5.6-luna", client_factory=lambda: client)
+        messages = [{"role": "user", "content": "Question"}]
 
         self.assertEqual(
-            list(service.stream_generate([{"role": "user", "content": "Question"}])),
+            list(service.stream_generate(messages)),
             ["Complete answer"],
+        )
+        client.responses.stream.assert_called_once_with(
+            model="gpt-5.6-luna",
+            input=messages,
+            max_output_tokens=512,
+            store=False,
         )
 
     @patch("services.openai_client.OpenAI")

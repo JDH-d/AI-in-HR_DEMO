@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,6 +29,39 @@ class APIV1ContractTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.client_context.__exit__(None, None, None)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_me_exposes_storage_identity_only_after_authentication(self) -> None:
+        for headers in ({}, {"X-User": "employee.demo"}, {"Authorization": "Bearer invalid"}):
+            response = self.client.get("/api/v1/me", headers=headers)
+            self.assertEqual(response.status_code, 401)
+            self.assertNotIn("backend_id", response.json())
+        employee = self.client.get("/api/v1/me", headers=self._headers("employee"))
+        manager = self.client.get("/api/v1/me", headers=self._headers("manager"))
+        self.assertEqual(employee.status_code, 200)
+        self.assertEqual(manager.status_code, 200)
+        self.assertEqual(set(employee.json()), {"user", "backend_id"})
+        self.assertEqual(employee.json()["user"]["id"], "employee.demo")
+        backend_id = employee.json()["backend_id"]
+        self.assertEqual(str(uuid.UUID(backend_id)), backend_id)
+        self.assertEqual(backend_id, self.services.conversations.backend_id)
+        self.assertEqual(backend_id, manager.json()["backend_id"])
+        self.assertNotIn("backend_id", self.client.get("/api/v1/health").json())
+
+    def test_me_identity_survives_service_restart_but_changes_with_another_database(self) -> None:
+        headers = self._headers("employee")
+        first = self.client.get("/api/v1/me", headers=headers).json()
+        # A new container reads the same test storage through a different origin.
+        restarted = build_test_services(self.temp_dir)
+        with TestClient(create_app(lambda: restarted), base_url="http://other-host:4567") as client:
+            response = client.get("/api/v1/me", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), first)
+        other = build_test_services(self.temp_dir / "other-backend")
+        with TestClient(create_app(lambda: other)) as client:
+            response = client.get("/api/v1/me", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertNotEqual(response.json()["backend_id"], first["backend_id"])
+            self.assertEqual(response.json()["user"], first["user"])
 
     def test_expected_routes_are_exposed(self) -> None:
         routes = {

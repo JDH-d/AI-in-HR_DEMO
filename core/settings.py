@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(encoding="utf-8-sig")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -43,7 +43,7 @@ def _get_int(name: str, default: int, minimum: int, maximum: int) -> int:
     return value
 
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano-2025-08-07").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna").strip()
 OPENAI_TIMEOUT_SECONDS = _get_float("OPENAI_TIMEOUT_SECONDS", 30.0, 1.0, 300.0)
 OPENAI_MAX_RETRIES = _get_int("OPENAI_MAX_RETRIES", 2, 0, 5)
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")

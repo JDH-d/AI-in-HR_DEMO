@@ -19,8 +19,8 @@ class ChatFallbackPolicy:
 
     def hr_support(self) -> str:
         return (
-            "I’ve opened a private HR support request for you. An HR partner will review it "
-            "and follow up here. You can add any helpful context in this conversation."
+            "Contacting HR is a simulated interaction in this demo. No HR ticket has been sent. "
+            "I can help with company policies, time off, and sick leave."
         )
 
     def topic_selection(self, topic: str) -> str:
@@ -54,14 +54,37 @@ class ChatFallbackPolicy:
         )
 
     @staticmethod
-    def workflow_draft(request_id: str, validation_errors: list[str]) -> str:
+    def workflow_draft(
+        request_id: str,
+        validation_errors: list[str],
+        *,
+        request_type: str = "pto",
+    ) -> str:
         message = (
-            f"I prepared request draft {request_id}. "
-            "Review the extracted fields and confirm before it is sent for review."
+            "I've prepared a sick leave draft. Review your availability before sharing it "
+            "with your manager."
+            if request_type == "sick_leave"
+            else "I've prepared a PTO draft. Review the dates and planning note before "
+            "sending it to your manager."
         )
         if validation_errors:
-            message += " Please correct the highlighted fields before confirmation."
+            message += " Complete the missing or highlighted fields in the draft first."
         return message
+
+    @staticmethod
+    def request_guidance(request_type: str) -> str:
+        if request_type == "sick_leave":
+            return (
+                'Tell me when you will be away, for example: "I need sick leave today." '
+                "I'll prepare a draft where you can check your time away and expected return. "
+                "Medical details aren't needed. Your manager is notified only after you review "
+                "and send it."
+            )
+        return (
+            "Tell me your start and end dates and a short planning note. "
+            'For example: "I need PTO from YYYY-MM-DD to YYYY-MM-DD for a family trip." '
+            "I'll prepare a draft for you to review. It goes to your manager only when you send it."
+        )
 
     @staticmethod
     def _format_topic_examples(topic: str) -> str:

@@ -15,6 +15,15 @@ from workflow_schema import SCHEMA_VERSION
 
 
 class WorkflowServiceTests(unittest.TestCase):
+    def test_slack_help_examples_prepare_the_expected_draft(self) -> None:
+        interpreter = WorkflowInterpreter(today_provider=lambda: date(2030, 9, 7))
+        pto = interpreter.analyze("I need PTO from September 21–23.", "employee.demo")
+        sick = interpreter.analyze("I’m sick today.", "employee.demo")
+        self.assertEqual(pto.request_type, "pto")
+        self.assertEqual((pto.start_date, pto.end_date), ("2030-09-21", "2030-09-23"))
+        self.assertEqual(sick.request_type, "sick_leave")
+        self.assertEqual(sick.start_date, "2030-09-07")
+
     def setUp(self) -> None:
         self.temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -63,6 +72,27 @@ class WorkflowServiceTests(unittest.TestCase):
             ["draft", "in_review"],
         )
 
+    def test_polite_requests_to_the_assistant_create_reviewable_drafts(self) -> None:
+        for text in (
+            "Can you book me PTO from 2030-04-01 to 2030-04-03?",
+            "Could you please prepare a vacation request for 2030-04-01?",
+            "Please report sick leave today",
+            "I'm sick today",
+            "I am out sick tomorrow",
+        ):
+            with self.subTest(text=text):
+                draft = self.service.prepare_draft(text, "demo-user")
+                assert draft is not None
+                self.assertEqual(draft["status"], "draft")
+                self.assertEqual(draft["validation_errors"], [])
+                if "sick" in text:
+                    self.assertEqual(draft["type"], "sick_leave")
+                    self.assertEqual(draft["comment"], "")
+                self.assertEqual(
+                    [event["to_status"] for event in self.service.history(draft["id"])["events"]],
+                    ["draft"],
+                )
+
     def test_invalid_calendar_date_cannot_be_confirmed(self) -> None:
         draft = self.service.prepare_draft(
             "I need vacation from 2030-02-31 to 2030-03-02",
@@ -109,6 +139,59 @@ class WorkflowServiceTests(unittest.TestCase):
         assert draft is not None
         self.assertEqual(draft["start_date"], "2030-04-10")
         self.assertEqual(draft["end_date"], "2030-04-12")
+
+    def test_named_date_ranges_are_extracted_for_review(self) -> None:
+        examples = (
+            ("I need PTO September 21–23, 2030", "2030-09-21", "2030-09-23"),
+            ("Can you book my vacation Sep 21 to 23?", "2030-09-21", "2030-09-23"),
+            ("I need PTO April 10, 2030 through April 12, 2030", "2030-04-10", "2030-04-12"),
+            ("I need PTO September 21 to September 23, 2031", "2031-09-21", "2031-09-23"),
+            ("I need time off today through April 3, 2030", "2030-04-01", "2030-04-03"),
+        )
+        for text, start, end in examples:
+            with self.subTest(text=text):
+                draft = self.service.prepare_draft(text, "demo-user")
+                assert draft is not None
+                self.assertEqual((draft["start_date"], draft["end_date"]), (start, end))
+                self.assertEqual(draft["status"], "draft")
+                self.assertEqual(draft["validation_errors"], [])
+
+    def test_invalid_named_date_stays_a_draft_with_validation_errors(self) -> None:
+        draft = self.service.prepare_draft("I need PTO February 30, 2030", "demo-user")
+        assert draft is not None
+        self.assertIsNone(draft["start_date"])
+        self.assertTrue(
+            any("Invalid calendar date" in error for error in draft["validation_errors"])
+        )
+        with self.assertRaises(WorkflowValidationError):
+            self.service.confirm_draft(draft["id"], "demo-user", {})
+
+    def test_explicit_sick_return_is_not_counted_as_another_day_away(self) -> None:
+        draft = self.service.prepare_draft("I'm sick today, back tomorrow", "demo-user")
+        assert draft is not None
+        self.assertEqual(draft["start_date"], "2030-04-01")
+        self.assertEqual(draft["end_date"], "2030-04-01")
+        self.assertEqual(draft["details"]["expected_return_date"], "2030-04-02")
+        self.assertEqual(draft["validation_errors"], [])
+
+    def test_sick_report_keeps_an_unknown_return_date(self) -> None:
+        draft = self.service.prepare_draft(
+            "I'm sick today. Not sure when I'll be back.", "demo-user"
+        )
+        assert draft is not None
+        self.assertIsNone(draft["end_date"])
+        self.assertIsNone(draft["details"]["expected_return_date"])
+        self.assertTrue(draft["details"]["expected_return_unknown"])
+        self.assertEqual(draft["validation_errors"], [])
+
+    def test_partial_sick_report_preserves_hours_and_same_day_return(self) -> None:
+        draft = self.service.prepare_draft("I need sick leave today for 2.5 hours", "demo-user")
+        assert draft is not None
+        self.assertEqual(draft["status"], "draft")
+        self.assertEqual(draft["details"]["time_away"], "partial_day")
+        self.assertEqual(draft["details"]["partial_hours"], 2.5)
+        self.assertEqual(draft["details"]["expected_return_date"], "2030-04-01")
+        self.assertEqual(draft["validation_errors"], [])
 
     def test_sick_leave_is_reported_without_a_medical_note_or_approval(self) -> None:
         draft = self.service.create_structured_draft(
@@ -194,6 +277,9 @@ class WorkflowServiceTests(unittest.TestCase):
             "I need to know the sick leave policy",
             "I want information about annual leave",
             "What is the process for requesting time off?",
+            "Can you explain the PTO policy?",
+            "I'm sick of these meetings",
+            "I need cryptocurrency advice",
         ]
 
         for question in questions:

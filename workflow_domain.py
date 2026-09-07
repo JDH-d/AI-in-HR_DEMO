@@ -65,6 +65,14 @@ _ACTION_PHRASES = (
     "request vacation",
     "request sick",
     "request time off",
+    "report sick",
+    "book me",
+    "book my",
+)
+_SICK_REPORT_PATTERN = re.compile(r"^i(?:'m| am) (?:out )?sick\b(?!\s+of\b)")
+_ASSISTANT_ACTION_PATTERN = re.compile(
+    r"^(?:(?:can|could|would) you (?:please )?|please |help me )"
+    r"(?:help me )?(?:request|book|create|prepare|report|submit)\b"
 )
 _QUESTION_PREFIXES = (
     "how ",
@@ -98,6 +106,21 @@ _KNOWLEDGE_MARKERS = (
 )
 _ISO_DATE_PATTERN = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)")
 _US_DATE_PATTERN = re.compile(r"(?<!\d)(\d{1,2}/\d{1,2}/\d{4})(?!\d)")
+_NAMED_DATE_PATTERN = re.compile(
+    r"\b(?P<month>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+    r"\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?"
+    r"(?:\s*(?:[-–—]|to|through)\s*(?P<last_day>\d{1,2})(?:st|nd|rd|th)?)?"
+    r"(?:(?:,\s*|\s+)(?P<year>\d{4}))?\b",
+    re.IGNORECASE,
+)
+_MONTH_NUMBERS = {
+    name: number
+    for number, name in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
 
 
 class WorkflowError(RuntimeError):
@@ -294,7 +317,7 @@ class WorkflowInterpreter:
         self.today_provider = today_provider or date.today
 
     def analyze(self, text: str, applicant: str) -> WorkflowDraftData | None:
-        normalized = " ".join((text or "").lower().split())
+        normalized = " ".join((text or "").lower().replace("’", "'").split())
         if not normalized or not self._is_explicit_action(normalized):
             return None
 
@@ -309,6 +332,34 @@ class WorkflowInterpreter:
             if request_type == "sick_leave"
             else {}
         )
+        if request_type == "sick_leave":
+            partial_hours = re.search(
+                r"(?<![\w.])(-?\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b", normalized
+            )
+            if partial_hours:
+                details["time_away"] = "partial_day"
+                details["partial_hours"] = float(partial_hours[1])
+                details["expected_return_date"] = start_date
+                details["expected_return_unknown"] = start_date is None
+            return_match = re.search(
+                r"\b(?:back|return(?:ing)?|expected return)(?:\s+(?:on|by))?\s+(.+)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if return_match:
+                expected_return, _, return_errors = self._extract_dates(return_match[1])
+                # An explicitly stated return is not an additional day of absence.
+                details["expected_return_date"] = expected_return
+                details["expected_return_unknown"] = False
+                date_errors.extend(return_errors)
+            unknown_return = re.search(
+                r"\b(?:not sure|unsure|don't know|do not know)\b.*\b(?:back|return)\b|"
+                r"\b(?:return|back)\b.*\b(?:unknown|not sure|unsure)\b",
+                normalized,
+            )
+            if unknown_return:
+                details["expected_return_date"] = None
+                details["expected_return_unknown"] = True
         comment = "" if request_type == "sick_leave" else text.strip()
         end_date = request_end_date(request_type, start_date, end_date, details)
         errors = date_errors + validate_request_fields(
@@ -332,31 +383,38 @@ class WorkflowInterpreter:
 
     @staticmethod
     def _is_explicit_action(normalized: str) -> bool:
-        has_action = any(phrase in normalized for phrase in _ACTION_PHRASES)
+        assistant_action = bool(_ASSISTANT_ACTION_PATTERN.search(normalized))
+        sick_report = bool(_SICK_REPORT_PATTERN.search(normalized))
+        has_action = (
+            assistant_action
+            or sick_report
+            or any(phrase in normalized for phrase in _ACTION_PHRASES)
+        )
         if not has_action:
             return False
         if any(marker in normalized for marker in _KNOWLEDGE_MARKERS):
             return False
         is_question = normalized.endswith("?") or normalized.startswith(_QUESTION_PREFIXES)
-        return not is_question or normalized.startswith(
-            ("please create", "please submit", "i need", "i want", "i would like", "i'd like")
+        return (
+            assistant_action
+            or sick_report
+            or not is_question
+            or normalized.startswith(
+                ("please create", "please submit", "i need", "i want", "i would like", "i'd like")
+            )
         )
 
     @staticmethod
     def _detect_type(normalized: str) -> str | None:
+        if _SICK_REPORT_PATTERN.search(normalized):
+            return "sick_leave"
         for request_type, terms in _TYPE_TERMS.items():
-            if any(term in normalized for term in terms):
+            if any(re.search(rf"\b{re.escape(term.strip())}\b", normalized) for term in terms):
                 return request_type
         return None
 
     def _extract_dates(self, text: str) -> tuple[str | None, str | None, list[str]]:
-        lowered = (text or "").lower()
-        relative_dates: list[date] = []
         today = self.today_provider()
-        if "today" in lowered:
-            relative_dates.append(today)
-        if "tomorrow" in lowered:
-            relative_dates.append(today + timedelta(days=1))
 
         parsed_dates: list[date | None] = []
         invalid_tokens: list[str] = []
@@ -368,6 +426,19 @@ class WorkflowInterpreter:
             (match.start(), match.group(1), "%m/%d/%Y")
             for match in _US_DATE_PATTERN.finditer(text or "")
         )
+        named_matches = list(_NAMED_DATE_PATTERN.finditer(text or ""))
+        explicit_years = {int(match["year"]) for match in named_matches if match["year"]}
+        default_year = next(iter(explicit_years)) if len(explicit_years) == 1 else today.year
+        for match in named_matches:
+            year = int(match["year"] or default_year)
+            month = _MONTH_NUMBERS[match["month"][:3].lower()]
+            for group in ("day", "last_day"):
+                if match[group]:
+                    token = f"{year:04d}-{month:02d}-{int(match[group]):02d}"
+                    matches.append((match.start(group), token, "%Y-%m-%d"))
+        for match in re.finditer(r"\b(today|tomorrow)\b", text or "", flags=re.IGNORECASE):
+            day = today + timedelta(days=match[1].lower() == "tomorrow")
+            matches.append((match.start(), day.isoformat(), "%Y-%m-%d"))
         for _, token, date_format in sorted(matches):
             try:
                 parsed_dates.append(datetime.strptime(token, date_format).date())
@@ -375,7 +446,7 @@ class WorkflowInterpreter:
                 invalid_tokens.append(token)
                 parsed_dates.append(None)
 
-        dates: list[date | None] = parsed_dates or relative_dates
+        dates = parsed_dates
         start = dates[0] if dates else None
         end = (dates[1] if len(dates) > 1 else dates[0]) if dates else None
         start_date = start.isoformat() if start else None

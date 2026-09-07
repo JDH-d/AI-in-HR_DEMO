@@ -27,6 +27,7 @@ $smokeEnvironmentNames = @(
     "DEMO_AUTH_SECRET",
     "DEMO_LOGIN_PASSWORD",
     "OPENAI_API_KEY",
+    "PEOPLEFLOW_TEST_PYTHON",
     "PYTHONUNBUFFERED",
     "PYTHONDONTWRITEBYTECODE"
 )
@@ -79,6 +80,7 @@ try {
     $env:DEMO_AUTH_SECRET = "peopleflow-smoke-secret"
     $env:DEMO_LOGIN_PASSWORD = "smoke-demo-password"
     $env:OPENAI_API_KEY = "your_openai_api_key"
+    $env:PEOPLEFLOW_TEST_PYTHON = $python
     $env:PYTHONUNBUFFERED = "1"
     $env:PYTHONDONTWRITEBYTECODE = "1"
 
@@ -87,7 +89,7 @@ try {
     & $python -m ruff format --check $projectRoot
     Assert-NativeSuccess "Backend format check"
     & $python -m pytest -q -p no:cacheprovider
-    Assert-NativeSuccess "Backend tests"
+    Assert-NativeSuccess "Backend and Slack tests, including isolated end-to-end scenarios"
     & $python -m scripts.run_rag_eval
     Assert-NativeSuccess "Deterministic RAG evaluation"
 
@@ -132,7 +134,7 @@ try {
 
     $unauthorizedStatus = $null
     try {
-        Invoke-WebRequest -Uri "$baseUrl/api/v1/me" -Method Get -TimeoutSec 10 | Out-Null
+        Invoke-WebRequest -Uri "$baseUrl/api/v1/me" -Method Get -TimeoutSec 10 -UseBasicParsing | Out-Null
     } catch {
         $unauthorizedStatus = $_.Exception.Response.StatusCode.value__
     }
@@ -167,6 +169,7 @@ try {
     }
 
     $stream = Invoke-WebRequest `
+        -UseBasicParsing `
         -Uri "$baseUrl/api/v1/chat/stream" `
         -Method Post `
         -ContentType "application/json" `
@@ -298,7 +301,7 @@ try {
         throw "Knowledge metrics did not reflect the smoke scenarios."
     }
 
-    Write-Output "Smoke check passed: tooling, history, streaming, PTO, sick leave, documents, and metrics."
+    Write-Output "Smoke check passed: backend and Slack tests, tooling, history, streaming, PTO, sick leave, documents, and metrics."
 } finally {
     foreach ($name in $smokeEnvironmentNames) {
         [Environment]::SetEnvironmentVariable(

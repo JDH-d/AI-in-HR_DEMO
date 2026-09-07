@@ -34,6 +34,7 @@ export function ManagerPage() {
   const requests = useQuery({
     queryKey: ["manager-requests"],
     queryFn: () => api<{ requests: WorkflowRequest[] }>("/api/v1/requests", token),
+    refetchInterval: 10_000,
   });
   const data = requests.data?.requests ?? [];
   const counts = {
@@ -260,6 +261,7 @@ function DecisionDialog({
   const detail = useQuery({
     queryKey: ["request-detail", id],
     queryFn: () => api<RequestDetail>(`/api/v1/requests/${id}`, token),
+    refetchInterval: 10_000,
     enabled: Boolean(id),
   });
   const action = useMutation({

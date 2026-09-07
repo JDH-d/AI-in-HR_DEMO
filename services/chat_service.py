@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 
 from rag.index import KnowledgeIndex
@@ -191,11 +192,21 @@ class ChatService:
                 content=self.fallback_policy.workflow_draft(
                     workflow_request["id"],
                     workflow_request.get("validation_errors", []),
+                    request_type=workflow_request["type"],
                 ),
                 intent=Intent.WORK,
                 language=decision.language,
                 workflow_request=workflow_request,
                 outcome_code="workflow",
+            )
+
+        request_help_type = self._request_help_type(latest_user.content)
+        if request_help_type:
+            return ChatOutcome(
+                content=self.fallback_policy.request_guidance(request_help_type),
+                intent=Intent.WORK,
+                language=decision.language,
+                outcome_code="guided",
             )
 
         if decision.intent == Intent.CAPABILITIES:
@@ -261,6 +272,21 @@ class ChatService:
             settings if settings is not None else configuration["settings"],
             system_prompt if system_prompt is not None else configuration["system_prompt"],
         )
+
+    @staticmethod
+    def _request_help_type(text: str) -> str | None:
+        """Answer app usage questions without substituting for company policy questions."""
+        normalized = " ".join((text or "").lower().split()).strip(" ?.!")
+        match = re.fullmatch(
+            r"(?:how (?:can|do|should) i|what(?:'s| is) the (?:process|way) "
+            r"(?:to|for)) (?:request(?:ing)?|apply(?:ing)? for|book(?:ing)?|report(?:ing)?|take) "
+            r"(?:my |some |a )?(?P<type>pto|paid time off|time off|vacation|annual leave|"
+            r"sick leave|sick day)(?: here| in slack| with you)?",
+            normalized,
+        )
+        if not match:
+            return None
+        return "sick_leave" if match["type"].startswith("sick") else "pto"
 
     @staticmethod
     def _is_underspecified_follow_up(text: str) -> bool:

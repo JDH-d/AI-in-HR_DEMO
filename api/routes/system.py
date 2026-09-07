@@ -35,5 +35,5 @@ def login(payload: LoginRequest, services: Services) -> dict:
 
 
 @router.get("/me")
-def me(identity: DemoIdentity = Depends(current_identity)) -> dict:
-    return {"user": identity.public_dict()}
+def me(services: Services, identity: DemoIdentity = Depends(current_identity)) -> dict:
+    return {"user": identity.public_dict(), "backend_id": services.conversations.backend_id}

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
@@ -16,6 +18,51 @@ class ConversationServiceTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_backend_id_is_stable_across_restart_and_empty_history(self) -> None:
+        backend_id = self.service.backend_id
+        self.assertEqual(str(uuid.UUID(backend_id)), backend_id)
+        self.assertEqual(uuid.UUID(backend_id).version, 4)
+        reopened = ConversationService(self.service.db_path)
+        self.assertEqual(reopened.backend_id, backend_id)
+        self.assertEqual(reopened.list_for_user("employee.demo"), [])
+        detail = reopened.record_exchange(
+            "employee.demo",
+            conversation_id=None,
+            user_content="A temporary conversation",
+            assistant_content="A temporary answer",
+        )
+        reopened.delete_for_user(detail["conversation"]["id"], "employee.demo")
+        self.assertEqual(ConversationService(self.service.db_path).backend_id, backend_id)
+
+    def test_new_database_has_its_own_backend_id(self) -> None:
+        other = ConversationService(Path(self.temp_dir.name) / "other.db")
+        self.assertNotEqual(self.service.backend_id, other.backend_id)
+
+    def test_backend_metadata_upgrade_preserves_existing_history(self) -> None:
+        detail = self.service.record_exchange(
+            "employee.demo",
+            conversation_id=None,
+            user_content="Existing history",
+            assistant_content="Existing answer",
+            sources=[{"title": "Policy"}],
+        )
+        # Simulate a pre-identity database using only this test's temporary data.
+        with closing(sqlite3.connect(self.service.db_path)) as conn:
+            conn.execute("DROP TABLE conversation_metadata")
+            conn.commit()
+        upgraded = ConversationService(self.service.db_path)
+        self.assertEqual(
+            upgraded.get_for_user(detail["conversation"]["id"], "employee.demo"), detail
+        )
+        self.assertEqual(ConversationService(self.service.db_path).backend_id, upgraded.backend_id)
+
+    def test_concurrent_initializers_share_one_persisted_backend_id(self) -> None:
+        path = Path(self.temp_dir.name) / "concurrent.db"
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            identities = list(workers.map(lambda _: ConversationService(path).backend_id, range(4)))
+        self.assertEqual(len(set(identities)), 1)
+        self.assertEqual(ConversationService(path).backend_id, identities[0])
 
     def test_exchange_is_persisted_and_first_question_becomes_title(self) -> None:
         detail = self.service.record_exchange(

@@ -151,7 +151,7 @@ class ChatServiceTests(unittest.TestCase):
             outcome = self.service.respond(query, created_by="demo-user")
 
         self.assertEqual(outcome.intent, Intent.WORK)
-        self.assertIn("I prepared request draft", outcome.content)
+        self.assertIn("I've prepared a PTO draft", outcome.content)
         self.assertIsNotNone(outcome.workflow_request)
         assert outcome.workflow_request is not None
         self.assertEqual(outcome.workflow_request["status"], "draft")
@@ -165,6 +165,50 @@ class ChatServiceTests(unittest.TestCase):
 
         self.assertIsNone(outcome.workflow_request)
         self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
+
+    def test_request_usage_question_gives_a_clear_next_step_without_retrieval(self) -> None:
+        for question in (
+            "How can I request time off?",
+            "How do I request vacation?",
+            "What is the process for requesting PTO?",
+        ):
+            with self.subTest(question=question):
+                outcome = self.service.respond(self._query(question), created_by="demo-user")
+                self.assertIn("start and end dates", outcome.content)
+                self.assertIn("review", outcome.content)
+                self.assertIn("only when you send it", outcome.content)
+                self.assertIsNone(outcome.workflow_request)
+        self.assertEqual(self.knowledge_index.ensure_calls, 0)
+        self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
+
+    def test_sick_leave_usage_explains_review_without_medical_details(self) -> None:
+        outcome = self.service.respond(
+            self._query("How do I report sick leave?"), created_by="demo-user"
+        )
+        self.assertIn("Medical details aren't needed", outcome.content)
+        self.assertIn("only after you review and send", outcome.content)
+        self.assertIsNone(outcome.workflow_request)
+
+    def test_policy_constraints_still_use_company_documents(self) -> None:
+        self.service.respond(
+            self._query("How far in advance should I request vacation?"), created_by="demo-user"
+        )
+        self.assertEqual(self.knowledge_index.ensure_calls, 1)
+        self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
+
+    def test_slack_pto_example_returns_the_shared_draft_with_no_submission(self) -> None:
+        outcome = self.service.respond(
+            self._query("I want PTO from 2026-09-21 to 2026-09-23. Planned time off."),
+            created_by="demo-user",
+        )
+        draft = outcome.workflow_request
+        assert draft is not None
+        self.assertEqual((draft["start_date"], draft["end_date"]), ("2026-09-21", "2026-09-23"))
+        self.assertEqual(draft["status"], "draft")
+        self.assertEqual(draft["validation_errors"], [])
+        self.assertNotIn(draft["id"], outcome.content)
+        history = self.service.workflow_service.history(draft["id"])
+        self.assertEqual([event["to_status"] for event in history["events"]], ["draft"])
 
     def test_abandoned_workflow_stream_discards_its_private_draft(self) -> None:
         updates = self.service.stream(
@@ -200,8 +244,8 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual(outcome.intent, Intent.WORK)
         self.assertEqual(
             outcome.content,
-            "I’ve opened a private HR support request for you. An HR partner will review it "
-            "and follow up here. You can add any helpful context in this conversation.",
+            "Contacting HR is a simulated interaction in this demo. No HR ticket has been sent. "
+            "I can help with company policies, time off, and sick leave.",
         )
         self.assertEqual(outcome.sources, [])
         self.assertIsNone(outcome.workflow_request)
