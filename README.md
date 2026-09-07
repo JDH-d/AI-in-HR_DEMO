@@ -40,7 +40,7 @@ Download and extract the project ZIP, or clone this repository. Open the project
 
 Open **[START.bat](START.bat)** in the project folder. No terminal commands or administrator launch are required.
 
-The launcher prepares the local environment and dependencies on first use, starts the API and interface in the background, waits for them to become ready, and opens your browser. Later runs reuse the installed dependencies. If PeopleFlow is already running, it opens that instance instead of creating another one. Occupied default ports are replaced with available local ports.
+The launcher prepares the shared environment and dependencies on first use, starts the API, web interface and configured Slack connection, waits for them to become ready, and opens your browser. Later runs reuse the installed dependencies. If PeopleFlow is already running, it opens that instance instead of creating another one. Occupied default ports are replaced with available local ports; Slack follows the chosen API address automatically.
 
 Keep the launcher window for these controls:
 
@@ -53,6 +53,8 @@ Keep the launcher window for these controls:
 | **5** | Open the log folder |
 | **6** | Reinstall project dependencies if setup needs repair |
 | **7** | Install Python or Node.js using Windows Package Manager, or open their download pages |
+| **8** | Connect or configure Slack in the root `.env` |
+| **10** | Check Slack configuration, bot identity and backend connectivity |
 | **0** | Close the launcher and leave PeopleFlow running |
 | **9** | Stop PeopleFlow and close the launcher |
 
@@ -64,6 +66,12 @@ The launcher creates a missing `.env` automatically. To enable generated answers
 
 > [!TIP]
 > No API key yet? The demo works with deterministic answers and lexical document search. The sign-in screen has three demo accounts and a prefilled password.
+
+### 4. Connect Slack (optional)
+
+Slack lets the demo employee ask company questions, request time off, report sick leave and receive status updates. Use **Messages** for chat and **Home** for requests and recent conversations. Slack and the web app share the same backend, conversation history and requests; managers and admins use the web app.
+
+Follow the short [Slack setup guide](slack/README.md) to fill in five fields in the **root `.env`**. In `START.bat`, choose **2** to restart and **10** to check the connection. Slack starts and stops with PeopleFlow, so keep PeopleFlow running while using it. Without Slack credentials, the web app works as usual.
 
 ### Demo accounts
 
@@ -96,10 +104,12 @@ The React app talks only to the versioned FastAPI contract. Application services
 ~~~mermaid
 flowchart LR
     E[Employee] --> UI[React SPA]
+    E --> SLACK[Slack]
     M[Manager] --> UI
     K[Knowledge admin] --> UI
 
     UI --> API[FastAPI /api/v1]
+    SLACK --> API
     API --> CHAT[Chat service]
     API --> FLOW[Workflow service]
     API --> OPS[Knowledge operations]
@@ -114,6 +124,7 @@ flowchart LR
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
 | Interface | React 19, TypeScript, Vite, Tailwind | Three role-based workspaces |
+| Slack | Bolt for Python, Socket Mode | Employee chat and requests through the same API |
 | API | FastAPI, Pydantic | Authentication, validation, role boundaries |
 | AI | OpenAI Responses API + embeddings | Generated answers and semantic retrieval |
 | Fallback | Deterministic responses + lexical search | Usable demo without provider access |
@@ -124,12 +135,12 @@ For the full boundaries and persistence flows, read [docs/ARCHITECTURE_OVERVIEW.
 
 ## Configuration
 
-The local <code>.env</code> stays intentionally small:
+OpenAI settings live in the root <code>.env</code>, alongside the optional Slack credentials:
 
 ~~~dotenv
 OPENAI_API_KEY=your_openai_api_key
 
-OPENAI_MODEL=gpt-5-nano-2025-08-07
+OPENAI_MODEL=gpt-5.6-luna
 EMBEDDING_MODEL=text-embedding-3-small
 ~~~
 
@@ -153,6 +164,7 @@ workflow_service.py          Authorization and use cases
 workflow_repository.py       Operational SQLite queries
 workflow_schema.py           Schema creation and migrations
 frontend/src/features/       Employee, manager, request, and knowledge UI
+slack/                       Employee Slack interface and its tests
 documents/                   Approved demo source material
 tests/                       Isolated backend coverage
 ~~~
@@ -166,7 +178,7 @@ Start the project with `START.bat` once to prepare the environment. The launcher
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\smoke_check.ps1
 ~~~
 
-The smoke check runs backend lint and tests, the deterministic RAG evaluation, frontend checks and build, then exercises authentication, history, streaming, PTO, sick leave, documents, and metrics against an isolated API.
+The smoke check runs backend and Slack lint and tests, the deterministic RAG evaluation, frontend checks and build, then exercises authentication, history, streaming, PTO, sick leave, documents, and metrics against an isolated API. Root `pytest` discovers both `tests/` and `slack/tests/`, including the Slack end-to-end scenarios against a temporary backend; Slack delivery is simulated, so no Slack credentials or running demo are required. Shared runtime dependencies, including Slack, are installed from `requirements.txt`; `requirements-dev.txt` adds test and lint tools.
 
 <details>
 <summary><strong>Run checks individually</strong></summary>
@@ -190,7 +202,8 @@ To verify the configured embedding provider instead of the deterministic lexical
 </details>
 
 GitHub Actions runs the deterministic gate on Python 3.10 and 3.12 with Node.js 22.
-Windows-specific launcher tests run locally on Windows and are skipped on other platforms.
+The same root pytest command covers backend and Slack in local checks and CI. When the backend dependencies are installed outside the root `.venv`, set `PEOPLEFLOW_TEST_PYTHON` to that Python executable; CI does this automatically.
+Windows-specific launcher tests also run in the Windows CI job and are skipped on other platforms.
 
 ## Local data
 
@@ -227,6 +240,7 @@ Interactive API documentation is available at [http://127.0.0.1:8000/docs](http:
 | Document | Use it for |
 | --- | --- |
 | [INSTRUCTIONS.txt](INSTRUCTIONS.txt) | Minimal local setup |
+| [Slack setup](slack/README.md) | Slack tokens and workspace/member IDs |
 | [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md) | Presenter walkthrough |
 | [API endpoints](docs/API_ENDPOINTS.md) | Routes, roles, payloads, errors |
 | [Architecture overview](docs/ARCHITECTURE_OVERVIEW.md) | Boundaries, storage, migrations |

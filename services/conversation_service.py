@@ -31,6 +31,16 @@ class ConversationService:
         self._init_db()
         self._import_legacy_history()
 
+    @property
+    def backend_id(self) -> str:
+        """Stable identity of this conversation storage, independent of its URL or path.
+
+        A copied database retains its logical storage identity. Creating a new
+        database creates a new identity; unrelated workflow/document stores are
+        not fingerprinted by this value.
+        """
+        return self._backend_id
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), timeout=5)
         conn.row_factory = sqlite3.Row
@@ -71,7 +81,23 @@ class ConversationService:
                 CREATE TABLE IF NOT EXISTS conversation_migrations (
                     name TEXT PRIMARY KEY
                 );
+
+                CREATE TABLE IF NOT EXISTS conversation_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """
+            )
+            # Concurrent initializers must read the winning persisted value,
+            # not keep their own candidate UUID. Existing storage is unchanged.
+            conn.execute(
+                "INSERT OR IGNORE INTO conversation_metadata (key, value) VALUES (?, ?)",
+                ("backend_id", str(uuid.uuid4())),
+            )
+            self._backend_id = str(
+                conn.execute(
+                    "SELECT value FROM conversation_metadata WHERE key = 'backend_id'"
+                ).fetchone()["value"]
             )
             columns = {
                 row["name"]

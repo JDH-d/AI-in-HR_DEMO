@@ -1,0 +1,21 @@
+{
+  "display_information": {
+    "name": "PeopleFlow AI",
+    "description": "Company answers, time off, and absence updates in one conversation.",
+    "background_color": "#141b24"
+  },
+  "features": {
+    "app_home": {"home_tab_enabled": true, "messages_tab_enabled": true, "messages_tab_read_only_enabled": false},
+    "bot_user": {"display_name": "PeopleFlow AI", "always_online": false},
+    "slash_commands": [{"command": "/peopleflow", "description": "Ask PeopleFlow or open your employee workspace", "usage_hint": "[question | home | request | requests | sources | new | help]", "should_escape": false}],
+    "shortcuts": [{"name": "Ask PeopleFlow", "type": "global", "callback_id": "ask_peopleflow", "description": "Ask about company policies or plan time away"}]
+  },
+  "oauth_config": {"scopes": {"bot": ["chat:write", "im:history", "im:write", "commands"]}},
+  "settings": {
+    "event_subscriptions": {"bot_events": ["app_home_opened", "message.im"]},
+    "interactivity": {"is_enabled": true},
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

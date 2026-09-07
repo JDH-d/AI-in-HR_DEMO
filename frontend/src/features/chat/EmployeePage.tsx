@@ -77,10 +77,12 @@ export function EmployeePage() {
   const conversations = useQuery({
     queryKey: ["conversations", userId],
     queryFn: () => api<{ conversations: ConversationSummary[] }>("/api/v1/conversations", token),
+    refetchInterval: 10_000,
   });
   const requests = useQuery({
     queryKey: ["requests", userId],
     queryFn: () => api<{ requests: WorkflowRequest[] }>("/api/v1/requests", token),
+    refetchInterval: 10_000,
   });
 
   const startNewChat = useCallback(() => {

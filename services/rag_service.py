@@ -196,12 +196,16 @@ class RAGService:
         if faq_answer:
             return faq_answer
 
-        keywords = extract_keywords(query_text)
-        candidates: list[tuple[int, int, str]] = []
+        keywords = [
+            keyword
+            for keyword in extract_keywords(query_text)
+            if keyword not in {"i", "me", "my", "a", "do", "does", "is", "to", "please"}
+        ]
+        candidates: list[tuple[int, int, int, str]] = []
         seen: set[str] = set()
         normalized_query = self._normalize_sentence(query_text)
 
-        for result in results[:3]:
+        for result_index, result in enumerate(results[:3]):
             text = (result.get("text") or "").strip()
             if not text:
                 continue
@@ -221,14 +225,22 @@ class RAGService:
                 if self._normalize_sentence(cleaned) == normalized_query:
                     continue
                 lowered = cleaned.lower()
-                keyword_score = sum(1 for keyword in keywords if keyword in lowered)
+                keyword_score = sum(
+                    1
+                    for keyword in keywords
+                    if re.search(rf"\b{re.escape(keyword)}(?:s|ed|ing)?\b", lowered)
+                )
                 if keyword_score <= 0 and keywords:
                     continue
-                candidates.append((keyword_score, len(cleaned), cleaned))
+                candidates.append((result_index, keyword_score, len(cleaned), cleaned))
 
         if candidates:
-            candidates.sort(key=lambda item: (-item[0], item[1]))
-            return "\n".join(item[2] for item in candidates[:2])
+            # Retrieval already ranks the matching topic. A lower-ranked policy should not
+            # displace it simply because one sentence repeats more words from the question.
+            candidates.sort(key=lambda item: (item[0], -item[1], item[2]))
+            best_source = candidates[0][0]
+            selected = [item[3] for item in candidates if item[0] == best_source][:2]
+            return "\n".join(selected)
         return self.fallback_policy.no_docs()
 
     def _extract_direct_answer(self, query_text: str, results: list[dict]) -> str:
@@ -267,6 +279,7 @@ class RAGService:
     def _clean_candidate_sentence(sentence: str) -> str:
         cleaned = re.sub(r"#+\s*", "", sentence or "")
         cleaned = re.sub(r"\*+", "", cleaned)
+        cleaned = re.sub(r"\.{2,}", ".", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" -:\n\t")
         bad_fragments = (
             "Document Owner:",
@@ -274,7 +287,14 @@ class RAGService:
             "Review Cadence:",
             "Audience Note:",
             "Related Documents:",
+            "Purpose:",
+            "Applies To:",
             "Frequently Asked Questions",
+            "A typical operating example",
+            "That example illustrates",
+            "as a normal operating topic",
+            "The goal of this section",
+            "This section explains",
         )
         if not cleaned or any(fragment.lower() in cleaned.lower() for fragment in bad_fragments):
             return ""

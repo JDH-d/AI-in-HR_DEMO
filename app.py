@@ -21,7 +21,7 @@ def create_app(
 
     application = FastAPI(
         title="AI HR Knowledge Assistant API",
-        version="2.3.0",
+        version="3.0.0",
         lifespan=lifespan,
     )
     application.add_middleware(

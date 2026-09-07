@@ -16,6 +16,7 @@ export function EmployeeRequestDetails({
   const detail = useQuery({
     queryKey: ["request-detail", id],
     queryFn: () => api<RequestDetail>(`/api/v1/requests/${id}`, token),
+    refetchInterval: 10_000,
     enabled: Boolean(id),
   });
   const request = detail.data?.request;

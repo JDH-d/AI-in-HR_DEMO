@@ -31,12 +31,17 @@ class WindowsLauncherTests(unittest.TestCase):
         scripts = self.workspace / "scripts"
         scripts.mkdir(parents=True)
         # Copy the actual scripts so even a broken dot-source guard cannot touch the real project.
-        for name in ("launcher.ps1", "demo_processes.ps1"):
+        for name in ("launcher.ps1", "demo_processes.ps1", "slack_service.ps1"):
             shutil.copyfile(PROJECT_ROOT / "scripts" / name, scripts / name)
+        shutil.copyfile(PROJECT_ROOT / "run_demo.ps1", self.workspace / "run_demo.ps1")
         (self.workspace / "frontend").mkdir()
+        (self.workspace / "slack").mkdir()
+        shutil.copyfile(PROJECT_ROOT / "run_demo.ps1", self.workspace / "run_demo.ps1")
+        shutil.copyfile(PROJECT_ROOT / "stop_demo.ps1", self.workspace / "stop_demo.ps1")
         for relative, content in {
             ".env.example": "OPENAI_API_KEY=your_openai_api_key\nDEMO_MODE=1\n",
             "requirements.txt": "fastapi==0.1\n",
+            "slack/pyproject.toml": '[project]\nname="launcher-slack-fixture"\n',
             "frontend/package.json": '{"name":"launcher-test"}\n',
             "frontend/package-lock.json": '{"lockfileVersion":3}\n',
         }.items():
@@ -49,6 +54,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop
 . {ps_quote(self.workspace / "scripts/launcher.ps1")} -Action Status -NoBrowser
+$script:fixturePython = {ps_quote(PROJECT_ROOT / ".venv/Scripts/python.exe")}
 $result = & {{
 {body}
 }}
@@ -57,7 +63,10 @@ $result = & {{
         encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
         # A parent pwsh 7 session can export its incompatible module path to powershell.exe.
         environment = {
-            key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() not in {"PSMODULEPATH", "OPENAI_MODEL", "POLL_INTERVAL_SECONDS"}
+            and not key.upper().startswith("SLACK_")
         }
         completed = subprocess.run(
             [
@@ -115,10 +124,11 @@ Initialize-LocalConfiguration
 
     def test_fingerprint_changes_for_each_dependency_manifest(self) -> None:
         original = self.run_powershell("Get-SetupFingerprint")
-        self.assertEqual(len(original.split(":")), 3)
+        self.assertEqual(len(original.split(":")), 4)
         previous = original
         for relative in (
             "requirements.txt",
+            "slack/pyproject.toml",
             "frontend/package.json",
             "frontend/package-lock.json",
         ):
@@ -300,3 +310,296 @@ try { Invoke-DemoScript -Name 'failure fixture.ps1' } catch { $failed = $true }
         self.assertEqual(
             (self.workspace / "batch-marker.txt").read_text(encoding="utf-8"), "started"
         )
+
+    def test_slack_configuration_is_optional_and_never_returns_credentials(self) -> None:
+        configuration_python = ps_quote(PROJECT_ROOT / ".venv/Scripts/python.exe")
+        configuration_probe = (
+            "Get-SlackConfiguration -Root $script:projectDirectory "
+            f"-PythonPath {configuration_python}"
+        )
+        missing = self.run_powershell(configuration_probe)
+        self.assertFalse(missing["configured"])
+        self.assertFalse(missing["partial"])
+        (self.workspace / ".env").write_text(
+            "SLACK_BOT_TOKEN='xoxb-private-fixture'\nSLACK_APP_TOKEN=xapp-private-fixture\n"
+            "SLACK_TEAM_ID=TDEMO # workspace\nSLACK_EMPLOYEE_USER_ID=UDEMO\n",
+            encoding="utf-8",
+        )
+        configured = self.run_powershell(configuration_probe)
+        self.assertEqual(configured, {"configured": True, "partial": False, "missing": []})
+        partial = self.run_powershell("$env:SLACK_TEAM_ID = ' '\n" + configuration_probe)
+        self.assertFalse(partial["configured"])
+        self.assertTrue(partial["partial"])
+        self.assertEqual(partial["missing"], ["SLACK_TEAM_ID"])
+
+    def test_start_shares_dotenv_parsing_for_slack_and_backend_settings(self) -> None:
+        (self.workspace / ".env").write_text(
+            "OPENAI_MODEL=launcher-fixture\n"
+            "SLACK_BOT_TOKEN='xoxb-private-fixture'\nSLACK_APP_TOKEN=xapp-private-fixture\n"
+            "export SLACK_TEAM_ID=TDEMO # workspace\nSLACK_EMPLOYEE_USER_ID=UDEMO\n"
+            "POLL_INTERVAL_SECONDS=12 # polling\n",
+            encoding="utf-8-sig",
+        )
+        result = self.run_powershell("""
+$ast = [Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $script:projectDirectory 'run_demo.ps1'), [ref]$null, [ref]$null)
+$importer = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Import-DotEnv'
+}, $true)
+Invoke-Expression $importer.Extent.Text
+Import-DotEnv -Path (Join-Path $script:projectDirectory '.env') -PythonPath $script:fixturePython
+@{ configured = (Get-SlackConfiguration -Root $script:projectDirectory).configured;
+   imported_slack = @((Get-ChildItem Env:) | Where-Object { $_.Name -like 'SLACK_*' }).Count;
+   model = $env:OPENAI_MODEL; interval = $env:POLL_INTERVAL_SECONDS }
+""")
+        self.assertEqual(
+            result,
+            {
+                "configured": True,
+                "imported_slack": 4,
+                "model": "launcher-fixture",
+                "interval": "12",
+            },
+        )
+
+    def test_blank_template_does_not_erase_inherited_slack_configuration_on_start(self) -> None:
+        (self.workspace / ".env").write_text(
+            "SLACK_BOT_TOKEN=\nSLACK_APP_TOKEN=\nSLACK_TEAM_ID=\nSLACK_EMPLOYEE_USER_ID=\n",
+            encoding="utf-8",
+        )
+        result = self.run_powershell("""
+$ast = [Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $script:projectDirectory 'run_demo.ps1'), [ref]$null, [ref]$null)
+$importer = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Import-DotEnv'
+}, $true)
+Invoke-Expression $importer.Extent.Text
+$env:SLACK_BOT_TOKEN = 'xoxb-process-fixture'
+$env:SLACK_APP_TOKEN = 'xapp-process-fixture'
+$env:SLACK_TEAM_ID = 'TDEMO'
+$env:SLACK_EMPLOYEE_USER_ID = 'UDEMO'
+Import-DotEnv -Path (Join-Path $script:projectDirectory '.env') -PythonPath $script:fixturePython
+Get-SlackConfiguration -Root $script:projectDirectory
+""")
+        self.assertEqual(result, {"configured": True, "partial": False, "missing": []})
+
+    def test_process_identity_preserves_native_datetime_timezone_in_powershell_7(self) -> None:
+        result = self.run_powershell("""
+$process = Get-Process -Id $PID
+$entry = [pscustomobject]@{ name='fixture'; pid=$PID; executable=$process.Path; marker='';
+    started_at=$process.StartTime.ToUniversalTime() }
+$native = $null -ne (Get-OwnedDemoProcess -Entry $entry)
+$entry.started_at = $entry.started_at.ToString('o')
+$iso = $null -ne (Get-OwnedDemoProcess -Entry $entry)
+@{ native=$native; iso=$iso }
+""")
+        self.assertTrue(result["native"])
+        self.assertTrue(result["iso"])
+
+    def test_slack_readiness_requires_live_owner_fresh_heartbeat_and_matching_api(self) -> None:
+        result = self.run_powershell("""
+Initialize-LocalConfiguration
+function Get-OwnedDemoProcess { return $true }
+$state = [ordered]@{ services = @([pscustomobject]@{ name='slack'; pid=123 }); api_url='http://127.0.0.1:8123' }
+$healthPath = Join-Path $script:stateDirectory 'slack_health.json'
+$health = @{ pid=123; api_url=$state.api_url; status='connected'; updated_at=[DateTimeOffset]::UtcNow.ToString('o') }
+function Read-FixtureHealth {
+    $health | ConvertTo-Json | Set-Content -LiteralPath $healthPath -Encoding UTF8
+    Get-SlackServiceStatus -State $state -Root $script:projectDirectory
+}
+$connected = Read-FixtureHealth
+$health.status = 'disconnected'
+$disconnected = Read-FixtureHealth
+$health.status = 'connected'
+$health.pid = 999
+$wrongPid = Read-FixtureHealth
+$health.pid = 123
+$health.api_url = 'http://127.0.0.1:8000'
+$wrongApi = Read-FixtureHealth
+$health.api_url = $state.api_url
+$health.updated_at = [DateTimeOffset]::UtcNow.AddMinutes(-2).ToString('o')
+$stale = Read-FixtureHealth
+$health.updated_at = [DateTimeOffset]::UtcNow.ToString('o')
+function Get-OwnedDemoProcess { return $null }
+$dead = Read-FixtureHealth
+@{ connected=$connected; disconnected=$disconnected; wrongPid=$wrongPid; wrongApi=$wrongApi; stale=$stale; dead=$dead }
+""")
+        self.assertEqual(result["connected"], "connected")
+        self.assertEqual(result["disconnected"], "disconnected")
+        self.assertEqual(result["dead"], "stopped")
+        for key in ("wrongPid", "wrongApi", "stale"):
+            self.assertEqual(result[key], "unresponsive")
+
+    def test_running_demo_requires_connected_slack_when_configured(self) -> None:
+        result = self.run_powershell("""
+Initialize-LocalConfiguration
+function Get-OwnedDemoProcess { return $true }
+function Get-SlackConfiguration { return @{ configured=$true } }
+function Invoke-RestMethod { return @{ status='ok'; api_version='v1' } }
+function Invoke-WebRequest { return @{ StatusCode=200 } }
+$state = @{ project_root=$script:projectDirectory; api_url='http://127.0.0.1:8123'; frontend_url='http://127.0.0.1:5273'; services=@(
+    @{name='api';pid=1}, @{name='frontend';pid=2}, @{name='slack';pid=3}) }
+Write-DemoProcessState -Path $script:stateFile -State $state
+$health = @{pid=3;api_url=$state.api_url;status='connected';updated_at=[DateTimeOffset]::UtcNow.ToString('o')}
+$healthPath = Join-Path $script:stateDirectory 'slack_health.json'
+$health | ConvertTo-Json | Set-Content -LiteralPath $healthPath -Encoding UTF8
+$connected = $null -ne (Get-RunningDemo)
+$health.status = 'disconnected'
+$health | ConvertTo-Json | Set-Content -LiteralPath $healthPath -Encoding UTF8
+$disconnected = $null -ne (Get-RunningDemo)
+$state.services = @($state.services | Where-Object { $_.name -ne 'slack' })
+Write-DemoProcessState -Path $script:stateFile -State $state
+$missing = $null -ne (Get-RunningDemo)
+@{ connected=$connected; disconnected=$disconnected; missing=$missing }
+""")
+        self.assertTrue(result["connected"])
+        self.assertFalse(result["disconnected"])
+        self.assertFalse(result["missing"])
+
+    def test_python_redirector_tracks_and_stops_real_worker_without_orphans(self) -> None:
+        python = PROJECT_ROOT / ".venv/Scripts/python.exe"
+        if not python.is_file():
+            self.skipTest("Requires the project's Windows Python environment")
+        (self.workspace / "launcher_worker_fixture.py").write_text(
+            "import os, pathlib, time\n"
+            "pathlib.Path('worker-pid.txt').write_text(str(os.getpid()))\n"
+            "time.sleep(25)\n",
+            encoding="utf-8",
+        )
+        result = self.run_powershell(f"""
+$child = Start-Process -FilePath {ps_quote(python)} -ArgumentList @('-m', 'launcher_worker_fixture') `
+    -WorkingDirectory $script:projectDirectory -WindowStyle Hidden -PassThru
+$state = $null
+try {{
+    $entry = New-DemoProcessEntry -Name slack -Process $child -Marker launcher_worker_fixture
+    $state = [pscustomobject]@{{ services=@($entry) }}
+    $workerPid = [int][IO.File]::ReadAllText((Join-Path $script:projectDirectory 'worker-pid.txt'))
+    $tracked = $entry.pid -eq $workerPid
+    $result = Stop-DemoProcesses -State $state
+    @{{ tracked=$tracked; workerPid=$workerPid; launcherPid=$child.Id;
+       unverified=@($result.unverified).Count;
+       workerAlive=$null -ne (Get-Process -Id $workerPid -ErrorAction SilentlyContinue);
+       launcherAlive=$null -ne (Get-Process -Id $child.Id -ErrorAction SilentlyContinue) }}
+}} finally {{
+    if ($state) {{ $null = Stop-DemoProcesses -State $state }}
+    elseif (-not $child.HasExited) {{ Stop-Process -Id $child.Id -Force }}
+}}
+""")
+        self.assertTrue(result["tracked"], result)
+        self.assertEqual(result["unverified"], 0, result)
+        self.assertFalse(result["workerAlive"], result)
+        self.assertFalse(result["launcherAlive"], result)
+
+    def test_start_keeps_cleanup_identity_when_state_write_or_next_service_fails(self) -> None:
+        (self.workspace / "tracked_worker_fixture.py").write_text(
+            "import time\ntime.sleep(25)\n", encoding="utf-8"
+        )
+        for failure in ("state_write", "next_service"):
+            with self.subTest(failure=failure):
+                body = """
+. (Join-Path $script:projectDirectory 'run_demo.ps1')
+Initialize-LocalConfiguration
+$state = [ordered]@{ services=@() }
+$entry = $null
+$failed = $false
+FAILURE_SETUP
+try {
+    $null = Start-TrackedDemoProcess -State $state -StatePath $script:stateFile -Name api `
+        -FilePath $script:fixturePython -ArgumentList @('-m', 'tracked_worker_fixture') `
+        -WorkingDirectory $script:projectDirectory -LogDirectory $script:logDirectory -Marker tracked_worker_fixture
+    NEXT_SERVICE
+} catch { $failed = $true }
+try {
+    $entry = $state.services[0]
+    $result = Stop-DemoProcesses -State $state
+    @{ failed=$failed; tracked=@($state.services).Count; unverified=@($result.unverified).Count;
+       workerAlive=$null -ne (Get-Process -Id $entry.pid -ErrorAction SilentlyContinue);
+       launcherAlive=$null -ne (Get-Process -Id $entry.launcher.pid -ErrorAction SilentlyContinue) }
+} finally {
+    $null = Stop-DemoProcesses -State $state
+}
+"""
+                body = body.replace(
+                    "FAILURE_SETUP",
+                    "function Write-DemoProcessState { throw 'fixture state write failure' }"
+                    if failure == "state_write"
+                    else "",
+                ).replace(
+                    "NEXT_SERVICE",
+                    ""
+                    if failure == "state_write"
+                    else """
+    $null = Start-TrackedDemoProcess -State $state -StatePath $script:stateFile -Name frontend `
+        -FilePath 'nonexistent-peopleflow-fixture.exe' -ArgumentList @('fixture') `
+        -WorkingDirectory $script:projectDirectory -LogDirectory $script:logDirectory -Marker fixture
+""",
+                )
+                result = self.run_powershell(body)
+                self.assertTrue(result["failed"], result)
+                self.assertEqual(result["tracked"], 1, result)
+                self.assertEqual(result["unverified"], 0, result)
+                self.assertFalse(result["workerAlive"], result)
+                self.assertFalse(result["launcherAlive"], result)
+
+    def test_service_lock_rejects_concurrent_operations_and_releases_afterwards(self) -> None:
+        (self.workspace / "lock fixture.ps1").write_text(
+            ". (Join-Path $PSScriptRoot 'scripts/demo_processes.ps1')\n"
+            "$lock = Enter-DemoLifecycleLock -Root $PSScriptRoot\n"
+            "Exit-DemoLifecycleLock -Mutex $lock\n",
+            encoding="utf-8",
+        )
+        result = self.run_powershell("""
+$lock = Enter-DemoLifecycleLock -Root $script:projectDirectory
+$blocked = $false
+try {
+    try { Invoke-DemoScript -Name 'lock fixture.ps1' } catch { $blocked = $true }
+} finally { Exit-DemoLifecycleLock -Mutex $lock }
+Invoke-DemoScript -Name 'lock fixture.ps1'
+@{ blocked=$blocked; released=$true; stateExists=(Test-Path -LiteralPath $script:stateFile) }
+""")
+        self.assertTrue(result["blocked"])
+        self.assertTrue(result["released"])
+        self.assertFalse(result["stateExists"])
+
+    def test_restart_is_one_atomic_child_operation_with_automatic_ports(self) -> None:
+        result = self.run_powershell("""
+Initialize-LocalConfiguration
+[IO.File]::WriteAllText($script:stateFile, '{}')
+$script:checks = 0
+function Get-RunningDemo {
+    $script:checks += 1
+    if ($script:checks -gt 1) { return @{ frontend_url='http://127.0.0.1:5173';slack_status='not_configured' } }
+}
+function Test-DependenciesReady { return $true }
+function Get-AvailableDemoPort { throw 'Ports must be selected inside the service operation lock' }
+$script:calls = @()
+function Invoke-DemoScript { param($Name, $ScriptArguments) $script:calls += @{name=$Name;arguments=$ScriptArguments} }
+$null = Start-PeopleFlow -Restart
+@{ count=@($script:calls).Count; name=$script:calls[0].name; arguments=$script:calls[0].arguments }
+""")
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["name"], "run_demo.ps1")
+        self.assertIn("-ForceRestart", result["arguments"])
+        self.assertIn("-AutoPorts", result["arguments"])
+
+    def test_shared_slack_check_action_does_not_start_or_configure_services(self) -> None:
+        result = self.run_powershell("""
+$pythonPath = Join-Path $script:projectDirectory '.venv/Scripts/python.exe'
+New-Item -ItemType Directory -Path (Split-Path $pythonPath) -Force | Out-Null
+Add-Type -OutputAssembly $pythonPath -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+public class SlackCheckProbe {
+    public static int Main(string[] args) {
+        System.IO.File.WriteAllText(Environment.GetEnvironmentVariable("SLACK_CHECK_PROBE"), string.Join("|", args));
+        return 0;
+    }
+}
+'@
+$env:SLACK_CHECK_PROBE = Join-Path $script:projectDirectory 'check-arguments.txt'
+Invoke-DemoScript -Name 'scripts/launcher.ps1' -ScriptArguments @('-Action', 'CheckSlack', '-NoBrowser')
+@{ arguments=[IO.File]::ReadAllText($env:SLACK_CHECK_PROBE);
+   state=(Test-Path -LiteralPath $script:stateFile); env=(Test-Path -LiteralPath (Join-Path $script:projectDirectory '.env')) }
+""")
+        self.assertEqual(result["arguments"], "-I|-m|peopleflow_slack|--check")
+        self.assertFalse(result["state"])
+        self.assertFalse(result["env"])

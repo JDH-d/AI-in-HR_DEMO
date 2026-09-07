@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet("Menu", "Start", "Restart", "Stop", "Status")][string]$Action = "Menu",
+    [ValidateSet("Menu", "Start", "Restart", "Stop", "Status", "CheckSlack")][string]$Action = "Menu",
     [switch]$NoBrowser
 )
 
@@ -15,33 +15,22 @@ if (-not (Test-Path -LiteralPath $script:powershell)) {
     $script:powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
 }
 . (Join-Path $PSScriptRoot "demo_processes.ps1")
-
-function Get-AvailableDemoPort {
-    param([int]$Preferred)
-    for ($candidate = $Preferred; $candidate -lt [Math]::Min($Preferred + 50, 65536); $candidate++) {
-        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $candidate)
-        try {
-            $listener.Server.ExclusiveAddressUse = $true
-            $listener.Start()
-            return $candidate
-        } catch [Net.Sockets.SocketException] {
-            # Try the next port; never stop the process which owns this one.
-        } finally {
-            $listener.Stop()
-        }
-    }
-    throw "No available port found near $Preferred. Close unused local servers and try again."
-}
+. (Join-Path $PSScriptRoot "slack_service.ps1")
 
 function Get-RunningDemo {
     $state = Read-DemoProcessState -Path $script:stateFile
     if (-not $state) { return $null }
     if ([string]$state.project_root -ne $script:projectDirectory) { return $null }
     $entries = @(Get-DemoProcessEntries -State $state)
-    if ($entries.Count -ne 2) { return $null }
-    foreach ($entry in $entries) {
+    $coreEntries = @($entries | Where-Object { $_.name -in @('api', 'frontend') })
+    if ($coreEntries.Count -ne 2 -or @($coreEntries.name | Select-Object -Unique).Count -ne 2) { return $null }
+    foreach ($entry in $coreEntries) {
         if (-not (Get-OwnedDemoProcess -Entry $entry)) { return $null }
     }
+    $slackConfiguration = Get-SlackConfiguration -Root $script:projectDirectory
+    $slackStatus = Get-SlackServiceStatus -State $state -Root $script:projectDirectory
+    if ($slackConfiguration.configured -and $slackStatus -notin @('connected', 'disabled')) { return $null }
+    if (-not $slackConfiguration.configured -and @($entries | Where-Object { $_.name -eq 'slack' }).Count -gt 0) { return $null }
     if ([string]$state.api_url -notmatch '^http://127\.0\.0\.1:\d+$' -or
         [string]$state.frontend_url -notmatch '^http://127\.0\.0\.1:\d+$') { return $null }
     try {
@@ -67,7 +56,7 @@ function Initialize-LocalConfiguration {
 }
 
 function Get-SetupFingerprint {
-    $hashes = foreach ($relative in @("requirements.txt", "frontend/package.json", "frontend/package-lock.json")) {
+    $hashes = foreach ($relative in @("requirements.txt", "slack/pyproject.toml", "frontend/package.json", "frontend/package-lock.json")) {
         (Get-FileHash -LiteralPath (Join-Path $script:projectDirectory $relative) -Algorithm SHA256).Hash
     }
     return $hashes -join ":"
@@ -86,7 +75,8 @@ function Test-DependenciesReady {
         if ($stamp.fingerprint -ne $Fingerprint -or $stamp.project_root -ne $script:projectDirectory) {
             return $false
         }
-        & $pythonPath -I -c "import fastapi, uvicorn, openai, dotenv, pypdf, docx, multipart" 2>$null | Out-Null
+        $probe = 'import fastapi, uvicorn, openai, dotenv, pypdf, docx, multipart, slack_bolt, slack_sdk, httpx, peopleflow_slack, sys; from pathlib import Path; assert Path(peopleflow_slack.__file__).resolve().parent == Path(sys.argv[1]).resolve()'
+        & $pythonPath -I -c $probe (Join-Path $script:projectDirectory 'slack/peopleflow_slack') 2>$null | Out-Null
         return $LASTEXITCODE -eq 0
     } catch { return $false }
 }
@@ -130,27 +120,20 @@ function Start-PeopleFlow {
     $running = Get-RunningDemo
     if ($running -and -not $Restart -and -not $Repair) {
         Write-Host "PeopleFlow is already running. Using the existing instance." -ForegroundColor Green
+        Show-SlackStatus -State $running -Root $script:projectDirectory
         return $running
-    }
-    if (Test-Path -LiteralPath $script:stateFile) {
-        Write-Host "Stopping the previous PeopleFlow instance..."
-        Invoke-DemoScript -Name "stop_demo.ps1"
     }
     Initialize-LocalConfiguration
     $fingerprint = Get-SetupFingerprint
     $install = $Repair -or -not (Test-DependenciesReady -Fingerprint $fingerprint)
-    $apiPort = Get-AvailableDemoPort -Preferred 8000
-    $uiPort = Get-AvailableDemoPort -Preferred 5173
-    if ($apiPort -ne 8000 -or $uiPort -ne 5173) {
-        Write-Host "A default port is busy. Using available ports: API $apiPort, interface $uiPort." -ForegroundColor DarkCyan
-    }
     if ($install) {
         Write-Host "Setting up or updating dependencies. An internet connection is required." -ForegroundColor Cyan
         Write-Host "This usually takes a few minutes. Future launches will be faster."
     } else {
         Write-Host "Dependencies are ready. Starting services..." -ForegroundColor Cyan
     }
-    $arguments = @("-ApiPort", "$apiPort", "-UserUiPort", "$uiPort", "-SkipIndexRebuild")
+    $arguments = @('-AutoPorts', '-SkipIndexRebuild')
+    if ($Restart -or $Repair -or (Test-Path -LiteralPath $script:stateFile)) { $arguments += '-ForceRestart' }
     if ($install) { $arguments += @("-InstallDeps", "-RuntimeDepsOnly") }
     Invoke-DemoScript -Name "run_demo.ps1" -ScriptArguments $arguments
     $running = Get-RunningDemo
@@ -160,6 +143,7 @@ function Start-PeopleFlow {
             ConvertTo-Json | Set-Content -LiteralPath $script:setupFile -Encoding UTF8
     }
     Write-Host "Ready! $($running.frontend_url)" -ForegroundColor Green
+    Show-SlackStatus -State $running -Root $script:projectDirectory
     return $running
 }
 
@@ -174,6 +158,15 @@ function Open-PeopleFlow {
 function Stop-PeopleFlow {
     Invoke-DemoScript -Name "stop_demo.ps1"
     Write-Host "PeopleFlow has stopped. Your data is preserved." -ForegroundColor Green
+}
+
+function Invoke-SlackCheck {
+    $python = Join-Path $script:projectDirectory '.venv/Scripts/python.exe'
+    if (-not (Test-Path -LiteralPath $python)) {
+        throw 'Start PeopleFlow once to prepare dependencies, then check Slack again.'
+    }
+    & $python -I -m peopleflow_slack --check
+    if ($LASTEXITCODE -ne 0) { throw 'Slack connection check failed. Review the settings in the root .env.' }
 }
 
 function Show-LauncherError {
@@ -219,49 +212,47 @@ function Show-LauncherMenu {
     Write-Host "  1  Open / Start             2  Restart"
     Write-Host "  3  Stop                     4  Configure API key (.env)"
     Write-Host "  5  Open logs                6  Reinstall dependencies"
-    Write-Host "  7  Install Python / Node.js"
+    Write-Host "  7  Install Python / Node.js  8  Connect / configure Slack"
+    Write-Host " 10  Check Slack connection"
     Write-Host "  0  Close this window (keep PeopleFlow running)"
     Write-Host "  9  Stop PeopleFlow and exit"
     Write-Host ""
 }
 
+function Show-PeopleFlowStatus {
+    $running = Get-RunningDemo
+    $state = Read-DemoProcessState -Path $script:stateFile
+    if ($running) {
+        Write-Host "RUNNING $($running.frontend_url)"
+        Show-SlackStatus -State $running -Root $script:projectDirectory
+        return $true
+    }
+    Write-Host 'NOT READY'
+    if ($state -and $state.project_root -eq $script:projectDirectory) {
+        foreach ($entry in Get-DemoProcessEntries -State $state | Where-Object { $_.name -in @('api', 'frontend') }) {
+            $label = if (Get-OwnedDemoProcess -Entry $entry) { 'process running' } else { 'stopped' }
+            Write-Host "$($entry.name): $label"
+        }
+        Show-SlackStatus -State $state -Root $script:projectDirectory
+    } else {
+        Write-Host 'Web and Slack: stopped.'
+    }
+    return $false
+}
+
 # Dot-sourcing exposes helpers for isolated tests without starting any services.
 if ($MyInvocation.InvocationName -eq ".") { return }
 
-$mutex = $null
-$ownsLock = $false
 try {
     $Host.UI.RawUI.WindowTitle = "PeopleFlow AI - Launcher"
     [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
     $env:PYTHONIOENCODING = "utf-8"
     $env:PYTHONUTF8 = "1"
-    $pathBytes = [Text.Encoding]::UTF8.GetBytes($script:projectDirectory.ToLowerInvariant())
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try { $lockId = [BitConverter]::ToString($sha.ComputeHash($pathBytes)).Replace("-", "") }
-    finally { $sha.Dispose() }
-    $mutex = [Threading.Mutex]::new($false, "Local\PeopleFlow-$lockId")
-    try { $ownsLock = $mutex.WaitOne(0) }
-    catch [Threading.AbandonedMutexException] { $ownsLock = $true }
-    if (-not $ownsLock) {
-        $running = Get-RunningDemo
-        if ($Action -eq "Status") {
-            if ($running) { Write-Host "RUNNING $($running.frontend_url)"; exit 0 }
-            Write-Host "STOPPED"; exit 1
-        }
-        if ($Action -in @("Menu", "Start") -and $running) {
-            Open-PeopleFlow -State $running
-            Write-Host "PeopleFlow is already running. Use the existing launcher window to manage it."
-            exit 0
-        }
-        Write-Host "The PeopleFlow launcher is already open. Wait for startup or use its menu."
-        if ($Action -eq "Menu") { Read-Host "Press Enter to close this window" | Out-Null; exit 0 }
-        exit 1
-    }
     Set-Location -LiteralPath $script:projectDirectory
+    if ($Action -eq 'CheckSlack') { Invoke-SlackCheck; exit 0 }
     if ($Action -eq "Status") {
-        $running = Get-RunningDemo
-        if ($running) { Write-Host "RUNNING $($running.frontend_url)"; exit 0 }
-        Write-Host "STOPPED"; exit 1
+        if (Show-PeopleFlowStatus) { exit 0 }
+        exit 1
     }
     if ($Action -eq "Stop") { Stop-PeopleFlow; exit 0 }
     Write-Host ""
@@ -294,7 +285,15 @@ try {
                 }
                 "6" { Open-PeopleFlow -State (Start-PeopleFlow -Repair) }
                 "7" { Install-RequiredTools }
+                "8" {
+                    Initialize-LocalConfiguration
+                    $slackEnv = Join-Path $script:projectDirectory '.env'
+                    Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $slackEnv + '"')
+                    Write-Host 'Add the Slack tokens and workspace/member IDs from slack/README.md. Save, then choose 2.'
+                    Write-Host 'Slack will start and stop with the web app. No separate terminal is needed.'
+                }
                 "9" { Stop-PeopleFlow; exit 0 }
+                "10" { Invoke-SlackCheck }
                 "0" { exit 0 }
                 default { Write-Host "Enter one of the menu numbers." }
             }
@@ -303,7 +302,4 @@ try {
 } catch {
     Show-LauncherError -Message $_.Exception.Message
     exit 1
-} finally {
-    if ($ownsLock -and $mutex) { $mutex.ReleaseMutex() }
-    if ($mutex) { $mutex.Dispose() }
 }

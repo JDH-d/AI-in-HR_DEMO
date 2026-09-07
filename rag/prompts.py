@@ -86,16 +86,23 @@ def _behavior_instructions(settings: dict[str, bool]) -> str:
         instructions.append("When the request is ambiguous, ask one focused clarifying question.")
     if settings.get("suggest_next_steps", True):
         instructions.append("When useful, end with one practical next step.")
+    instructions.append(
+        "Answer the employee's question directly before adding context. For process questions, "
+        "give the relevant steps from the sources instead of retelling an operating example. "
+        "Treat examples as illustrations, not additional policy requirements. Never claim a "
+        "request was created, sent, approved, or shared unless a workflow result confirms it."
+    )
     return " ".join(instructions)
 
 
 def _messages_to_input(messages: list[dict]) -> list[dict]:
     out: list[dict] = []
     for message in messages:
+        content_type = "output_text" if message["role"] == "assistant" else "input_text"
         out.append(
             {
                 "role": message["role"],
-                "content": [{"type": "input_text", "text": message["content"]}],
+                "content": [{"type": content_type, "text": message["content"]}],
             }
         )
     return out
