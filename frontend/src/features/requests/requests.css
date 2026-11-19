@@ -1,0 +1,92 @@
+.requests-workspace { display: flex; flex-direction: column; gap: 1rem; }
+.request-list { min-width: 0; container: request-list / inline-size; }
+.request-list-controls { display: flex; align-items: center; justify-content: space-between; gap: .75rem; border-bottom: 1px solid var(--color-line); padding-bottom: .25rem; }
+.request-view-tabs { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; }
+.request-view-tabs > button { white-space: nowrap; }
+.request-view-mobile { display: none; min-width: 0; flex: 1; }
+.request-list > section[aria-label="Request filters"]:empty { display: none; }
+#request-extra-filters { animation: surface-fade var(--motion-enter) ease-out; }
+.request-status-line { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.request-refresh { margin-left: auto; }
+.request-action-strip { display: flex; flex-direction: column; gap: .65rem; padding: .75rem 0; border-block: 1px solid var(--color-line); background: var(--color-ink); }
+.request-detail-page .request-action-strip { position: sticky; top: var(--workspace-header-height,64px); z-index: 10; }
+.request-action-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.request-destructive-action { margin-left: auto; padding-left: .75rem; border-left: 1px solid var(--color-line); }
+.request-destructive-action:first-child { margin-left: 0; padding-left: 0; border-left: 0; }
+.request-unsent-note { flex-basis: 100%; }
+.request-back-button { margin: -.5rem 0 .25rem -.75rem; }
+.request-detail-content { container-type: inline-size; }
+.request-description { padding: 1rem; }
+.request-metadata { padding: 1rem; background: var(--color-panel); border-top: 1px solid var(--color-line); }
+.request-assignment { padding: .25rem .5rem; border-top: 1px solid var(--color-line); }
+.request-reassignment-form { display: grid; gap: .75rem; padding: .75rem .5rem; }
+.request-reassignment-form > button { justify-self: start; }
+.request-activity-layout { display: grid; gap: 1rem; align-items: start; }
+.request-form-pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; }
+@media (max-width: 359px) { .request-form-pair { grid-template-columns: 1fr; } }
+@container (min-width: 650px) {
+  .request-overview-fields { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .request-activity-layout { grid-template-columns: minmax(0,1.25fr) minmax(0,1fr); }
+  .request-reassignment-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .request-reassignment-form > p { grid-column: 1 / -1; }
+}
+/* Long titles must wrap inside the assigned columns, never expand the table past its actions. */
+.request-table { table-layout: fixed; }
+.request-table th, .request-table td { padding: .65rem 1rem; vertical-align: middle; }
+.request-table th { white-space: nowrap; }
+.request-table td { overflow-wrap: anywhere; }
+.request-table tbody tr { transition: background-color var(--motion-fast); }
+.request-table tbody tr + tr { border-top: 1px solid var(--color-line); }
+.request-table th:first-child, .request-table .request-title { width: 36%; }
+.request-table th:nth-child(2), .request-table .request-person { width: 20%; }
+.request-mobile-label { display: none; }
+.request-list-with-selection { display: none; }
+/* The sidebar and split view reduce the list's usable width independently of the viewport. */
+@container request-list (max-width: 850px) {
+  .request-view-tabs { display: none; }
+  .request-view-mobile { display: block; }
+  .request-list-controls { padding: 0; border: 0; }
+  .request-table, .request-table tbody { display: block; }
+  .request-table thead { display: none; }
+  .request-table tr { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .4rem .75rem; padding: .75rem 1rem; }
+  .request-table td { display: block; padding: 0; }
+  .request-table .request-title, .request-table .request-person { width: auto; grid-column: 1 / -1; }
+  .request-table .request-person, .request-table .request-priority { font-size: .75rem; }
+  .request-table .request-status { grid-column: 2; grid-row: 3 / 5; align-self: center; }
+  .request-table .request-updated { grid-column: 1; }
+  .request-mobile-label { display: inline; }
+}
+@media (min-width: 1280px) {
+  .requests-workspace-split { max-width: none; }
+  .request-split { display: grid; grid-template-columns: 280px minmax(0,1fr); gap: 1.25rem; align-items: start; }
+  .request-list-with-selection { display: block; position: sticky; top: calc(var(--workspace-header-height,64px) + 1rem); max-height: calc(100dvh - var(--workspace-header-height,64px) - 2rem); overflow-y: auto; padding: 2px 8px 2px 2px; }
+  .request-split .request-table, .request-split .request-table tbody { display: block; }
+  .request-split .request-table thead { display: none; }
+  .request-split .request-table tr { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .4rem .75rem; padding: .75rem; }
+  .request-split .request-table td { display: block; width: auto; padding: 0; font-size: .75rem; }
+  .request-split .request-table .request-title, .request-split .request-table .request-person { grid-column: 1 / -1; }
+  .request-split .request-table .request-status { grid-column: 2; grid-row: 3 / 5; align-self: center; }
+  .request-split .request-table .request-updated { grid-column: 1; }
+  .request-split .request-mobile-label { display: inline; }
+  .request-split #request-extra-filters { grid-template-columns: 1fr; }
+  .request-split #request-extra-filters > div, .request-split #request-extra-filters > p { grid-column: 1; }
+  .request-list-with-selection .request-view-tabs { display: none; }
+  .request-list-with-selection .request-view-mobile { display: block; }
+  .request-list-with-selection .request-list-controls { padding: 0; border: 0; gap: .4rem; }
+  .request-list-with-selection .request-list-controls > button { padding-inline: .65rem; }
+}
+@media (max-width: 640px) {
+  .requests-workspace { gap: .75rem; }
+  .request-page-heading h1 { font-size: 1.25rem; }
+  .request-page-heading p { display: none; }
+  .request-back-to-chats { padding-inline: .5rem; }
+  .request-back-to-chats span { display: none; }
+  .request-refresh { width: 44px; padding: 0; }
+  .request-refresh span { display: none; }
+  .request-status-line { gap: .4rem; }
+  .request-action-strip { gap: .5rem; padding-block: .5rem; }
+  .request-action-controls > button, .request-action-controls > div > button { padding-inline: .75rem; }
+  .request-metadata, .request-description { padding: .875rem; }
+  .request-overview-fields { gap: .75rem; }
+}
+@media (max-height: 540px) { .request-detail-page .request-action-strip { position: static; } }

@@ -3,22 +3,23 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from api.chat_adapter import handle_chat
 from api.schemas import ChatRequest, Message
+from domain.chat import RoutingDecision
+from integrations.llm_service import LLMServiceError
 from rag.index import build_index_items
 from rag.nlp import Intent
 from rag.retriever import Retriever
 from services.chat_fallbacks import ChatFallbackPolicy
-from services.chat_models import RoutingDecision
 from services.chat_service import ChatService
-from services.document_reader import load_documents
-from services.document_service import DocumentService
-from services.llm_service import LLMServiceError
 from services.rag_service import RAGService
-from workflow import WorkflowService
+from services.workflow_service import WorkflowService
+from storage.document_reader import load_documents
+from storage.document_store import DocumentStore
 
 
 class FailingLLM:
-    def generate(self, prompt_messages: list[dict]) -> str:
+    def generate(self, prompt_messages: list[dict], **kwargs) -> str:
         raise LLMServiceError("LLM unavailable")
 
 
@@ -65,14 +66,13 @@ class ChatServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.workflow_db = self.temp_dir / "workflow.db"
-        self.document_service = DocumentService(self.docs_dir)
-        self.log_service = RecordingLogService()
+        self.document_store = DocumentStore(self.docs_dir)
+        self.chat_log_store = RecordingLogService()
         retriever = Retriever(
             build_index_items(load_documents(self.docs_dir), include_embeddings=False)
         )
         rag_service = RAGService(
             llm_service=FailingLLM(),
-            document_service=self.document_service,
             fallback_policy=ChatFallbackPolicy(),
             index_ensurer=lambda: None,
             retriever_provider=lambda: retriever,
@@ -80,8 +80,7 @@ class ChatServiceTests(unittest.TestCase):
         self.service = ChatService(
             workflow_service=WorkflowService(str(self.workflow_db)),
             llm_service=FailingLLM(),
-            log_service=self.log_service,
-            document_service=self.document_service,
+            chat_log_store=self.chat_log_store,
             rag_service=rag_service,
         )
 
@@ -116,7 +115,7 @@ class ChatServiceTests(unittest.TestCase):
                 return_value="guided response",
             ) as generate_with_fallback,
         ):
-            response = self.service.handle_chat(request, created_by="demo-user")
+            response = handle_chat(self.service, request, created_by="demo-user")
 
         self.assertEqual(response.intent, "work")
         self.assertIn("I prepared request draft", response.message.content)
@@ -128,7 +127,7 @@ class ChatServiceTests(unittest.TestCase):
     def test_policy_question_does_not_create_workflow_draft(self) -> None:
         request = ChatRequest(messages=[Message(role="user", content="How do I request vacation?")])
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        response = handle_chat(self.service, request, created_by="demo-user")
 
         self.assertIsNone(response.workflow_request)
         self.assertEqual(self.service.workflow_service.list_for_user("demo-user"), [])
@@ -136,7 +135,7 @@ class ChatServiceTests(unittest.TestCase):
     def test_explicit_topic_selection_returns_guided_response(self) -> None:
         request = ChatRequest(messages=[Message(role="user", content="2")])
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        response = handle_chat(self.service, request, created_by="demo-user")
 
         self.assertEqual(response.intent, "work")
         self.assertIn("You selected Salary and payroll.", response.message.content)
@@ -152,7 +151,7 @@ class ChatServiceTests(unittest.TestCase):
             ]
         )
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        response = handle_chat(self.service, request, created_by="demo-user")
 
         self.assertEqual(response.intent, "work")
         self.assertIn("Salaries are paid twice per month.", response.message.content)
@@ -166,7 +165,7 @@ class ChatServiceTests(unittest.TestCase):
             ]
         )
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        response = handle_chat(self.service, request, created_by="demo-user")
 
         self.assertEqual(response.intent, "work")
         self.assertIn(
@@ -184,12 +183,12 @@ class ChatServiceTests(unittest.TestCase):
             ]
         )
 
-        response = self.service.handle_chat(request, created_by="demo-user")
+        response = handle_chat(self.service, request, created_by="demo-user")
 
         self.assertEqual(response.intent, "invalid")
         self.assertIn("I can assist only with supported workplace topics", response.message.content)
         self.assertNotIn("Salaries are paid", response.message.content)
-        self.assertEqual(self.log_service.entries, [])
+        self.assertEqual(self.chat_log_store.entries, [])
 
     def test_preview_mode_creates_no_request_and_writes_no_log(self) -> None:
         request = ChatRequest(
@@ -201,7 +200,8 @@ class ChatServiceTests(unittest.TestCase):
             ]
         )
 
-        response = self.service.handle_chat(
+        response = handle_chat(
+            self.service,
             request,
             created_by="knowledge-admin",
             log_outcome=False,
@@ -210,7 +210,7 @@ class ChatServiceTests(unittest.TestCase):
 
         self.assertIsNone(response.workflow_request)
         self.assertEqual(self.service.workflow_service.list_for_user("knowledge-admin"), [])
-        self.assertEqual(self.log_service.entries, [])
+        self.assertEqual(self.chat_log_store.entries, [])
 
     def test_rag_bootstrap_failure_returns_service_fallback(self) -> None:
         request = ChatRequest(
@@ -220,7 +220,7 @@ class ChatServiceTests(unittest.TestCase):
         original_ensurer = self.service.rag_service.index_ensurer
         self.service.rag_service.index_ensurer = Mock(side_effect=RuntimeError("boom"))
         try:
-            response = self.service.handle_chat(request, created_by="demo-user")
+            response = handle_chat(self.service, request, created_by="demo-user")
         finally:
             self.service.rag_service.index_ensurer = original_ensurer
 

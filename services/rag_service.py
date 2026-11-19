@@ -5,16 +5,17 @@ import re
 import sqlite3
 from collections.abc import Callable
 
+from domain.chat import ChatOutcome, ChatQuery, RetrievedChunk, RoutingDecision
+from integrations.llm_service import LLMService, LLMServiceError
 from rag.index import ensure_index, get_retriever
-from rag.nlp import Intent
+from rag.nlp import Intent, extract_keywords, strip_greeting
 from rag.prompts import build_general_prompt, build_rag_prompt
-from rag.retriever import RetrieverError
+from rag.retriever import Retriever, RetrieverError
+from storage.ai_settings_store import AI_SETTINGS_DEFAULTS, AISettingsStore
+from storage.prompt_store import PromptStore
 
-from .ai_settings_service import AI_SETTINGS_DEFAULTS, AISettingsService
 from .chat_fallbacks import ChatFallbackPolicy
-from .chat_models import ChatOutcome, ChatQuery, RetrievedChunk, RoutingDecision
-from .document_service import DocumentService
-from .llm_service import LLMService, LLMServiceError
+from .source_selection_service import SourceSelectionService
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +24,19 @@ class RAGService:
     def __init__(
         self,
         llm_service: LLMService,
-        document_service: DocumentService,
         fallback_policy: ChatFallbackPolicy,
         index_ensurer: Callable[[], None] | None = None,
         retriever_provider: Callable | None = None,
-        ai_settings_service: AISettingsService | None = None,
+        ai_settings_store: AISettingsStore | None = None,
+        prompt_store: PromptStore | None = None,
     ) -> None:
         self.llm_service = llm_service
-        self.document_service = document_service
         self.fallback_policy = fallback_policy
         self.index_ensurer = index_ensurer
         self.retriever_provider = retriever_provider
-        self.ai_settings_service = ai_settings_service
+        self.ai_settings_store = ai_settings_store
+        self.prompt_store = prompt_store
+        self.source_selection = SourceSelectionService(llm_service)
 
     def answer_with_retrieval(
         self,
@@ -43,9 +45,11 @@ class RAGService:
         settings: dict[str, bool] | None = None,
         system_prompt: str | None = None,
     ) -> ChatOutcome:
+        if system_prompt is None and self.prompt_store is not None:
+            system_prompt = self.prompt_store.get()
         active_settings = settings or (
-            self.ai_settings_service.get()
-            if self.ai_settings_service is not None
+            self.ai_settings_store.get()
+            if self.ai_settings_store is not None
             else dict(AI_SETTINGS_DEFAULTS)
         )
         latest_user = query.latest_user_message
@@ -56,15 +60,19 @@ class RAGService:
                 language=decision.language,
             )
 
+        selection_unavailable = False
         try:
             if self.index_ensurer:
                 self.index_ensurer()
             else:
                 ensure_index()
             retriever = self.retriever_provider() if self.retriever_provider else get_retriever()
-            retrieval_text = latest_user.content
+            retrieval_text = strip_greeting(latest_user.content)
+            if decision.context_question:
+                retrieval_text = f"{decision.context_question}\n{retrieval_text}"
             if (
-                decision.intent == Intent.WORK
+                not decision.context_question
+                and decision.intent == Intent.WORK
                 and decision.prior_topic
                 and not decision.explicit_topic_choice
             ):
@@ -74,8 +82,20 @@ class RAGService:
                 top_k=query.top_k,
                 min_similarity=query.min_similarity,
             )
+            if not Retriever.is_exact_question(latest_user.content, results):
+                candidates = retriever.selection_candidates(retrieval_text)
+                # Compound questions need an evidence budget independent of lexical top_k.
+                selected = self.source_selection.select(query, candidates, limit=8)
+                if selected is not None:
+                    results = selected
+                elif isinstance(candidates, list) and candidates:
+                    selection_unavailable = True
         except (OSError, RetrieverError, RuntimeError, sqlite3.Error, ValueError) as exc:
-            logger.warning("RAG retrieval failed for intent %s: %s", decision.intent.value, exc)
+            logger.warning(
+                "RAG retrieval failed intent=%s error_type=%s",
+                decision.intent.value,
+                type(exc).__name__,
+            )
             return ChatOutcome(
                 content=self.fallback_policy.service_unavailable(decision.language),
                 intent=decision.intent,
@@ -86,6 +106,8 @@ class RAGService:
         if not results:
             if decision.intent == Intent.INVALID:
                 content = self.fallback_policy.invalid(decision.language)
+            elif selection_unavailable:
+                content = self.fallback_policy.service_unavailable(decision.language)
             elif not active_settings.get("strict_grounding", True):
                 content = self.generate_with_fallback(
                     build_general_prompt(
@@ -157,7 +179,7 @@ class RAGService:
         if faq_answer:
             return faq_answer
 
-        keywords = self.document_service._extract_keywords(query_text)
+        keywords = extract_keywords(query_text)
         candidates: list[tuple[int, float, str]] = []
         seen: set[str] = set()
         normalized_query = self._normalize_sentence(query_text)
@@ -166,6 +188,8 @@ class RAGService:
             text = (result.get("text") or "").strip()
             if not text:
                 continue
+            section = result.get("section", "")
+            section_score = sum(1 for keyword in keywords if keyword in section.lower())
             normalized_text = re.sub(r"#{2,6}\s*", ". ", text)
             normalized_text = re.sub(r"\s-\s+", ". ", normalized_text)
             sentences = re.split(r"(?<=[.!?])\s+", normalized_text)
@@ -182,7 +206,7 @@ class RAGService:
                 if self._normalize_sentence(cleaned) == normalized_query:
                     continue
                 lowered = cleaned.lower()
-                keyword_score = sum(1 for keyword in keywords if keyword in lowered)
+                keyword_score = sum(1 for keyword in keywords if keyword in lowered) + section_score
                 if keyword_score <= 0 and keywords:
                     continue
                 candidates.append((keyword_score, len(cleaned), cleaned))

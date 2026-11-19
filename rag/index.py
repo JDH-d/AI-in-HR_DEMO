@@ -5,11 +5,10 @@ import json
 import logging
 from typing import Any, Optional
 
-from openai import OpenAIError
-
 from core import settings
-from services.document_reader import DocumentRecord, load_documents
-from services.openai_client import create_openai_client
+from integrations.embedding_service import EmbeddingError, EmbeddingService
+from storage.document_reader import DocumentRecord, load_documents
+from storage.json_store import read_json, write_json
 
 from .retriever import Retriever
 from .text import chunk_document
@@ -18,7 +17,6 @@ DOCUMENTS_DIR = settings.DOCUMENTS_DIR
 INDEX_PATH = settings.INDEX_PATH
 EMBEDDING_MODEL = settings.EMBEDDING_MODEL
 INDEX_SCHEMA_VERSION = 2
-EMBEDDING_BATCH_SIZE = 64
 
 _retriever: Optional[Retriever] = None
 logger = logging.getLogger(__name__)
@@ -26,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 def ensure_index() -> None:
     global _retriever
-    INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
     documents = load_documents(DOCUMENTS_DIR)
     fingerprint = documents_fingerprint(documents)
     payload = _read_index_payload()
@@ -60,7 +57,7 @@ def build_index(documents: list[DocumentRecord] | None = None) -> None:
         "documents_fingerprint": documents_fingerprint(documents),
         "items": items,
     }
-    _write_index(payload)
+    write_json(INDEX_PATH, payload)
     _retriever = None
 
 
@@ -116,20 +113,10 @@ def documents_fingerprint(documents: list[DocumentRecord]) -> str:
 
 def _add_embeddings(items: list[dict[str, Any]]) -> None:
     try:
-        client = create_openai_client()
-        embeddings: list[list[float]] = []
-        for start in range(0, len(items), EMBEDDING_BATCH_SIZE):
-            batch = items[start : start + EMBEDDING_BATCH_SIZE]
-            response = client.embeddings.create(
-                model=EMBEDDING_MODEL,
-                input=[item["text"] for item in batch],
-            )
-            embeddings.extend(item.embedding for item in response.data)
-        if len(embeddings) != len(items):
-            raise ValueError("Embedding response count did not match indexed chunk count")
+        embeddings = EmbeddingService(model=EMBEDDING_MODEL).embed([item["text"] for item in items])
         for item, embedding in zip(items, embeddings):
             item["embedding"] = embedding
-    except (OpenAIError, OSError, TypeError, ValueError) as exc:
+    except EmbeddingError as exc:
         for item in items:
             item.pop("embedding", None)
         logger.warning(
@@ -140,11 +127,7 @@ def _add_embeddings(items: list[dict[str, Any]]) -> None:
 
 
 def _read_index_payload() -> dict[str, Any] | None:
-    try:
-        with INDEX_PATH.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
+    payload = read_json(INDEX_PATH)
     return payload if isinstance(payload, dict) else None
 
 
@@ -157,11 +140,3 @@ def _is_current_payload(payload: dict[str, Any] | None, fingerprint: str) -> boo
         and payload.get("documents_fingerprint") == fingerprint
         and isinstance(payload.get("items"), list)
     )
-
-
-def _write_index(payload: dict[str, Any]) -> None:
-    INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = INDEX_PATH.with_suffix(f"{INDEX_PATH.suffix}.tmp")
-    with temp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=True)
-    temp_path.replace(INDEX_PATH)

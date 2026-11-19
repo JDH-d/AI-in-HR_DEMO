@@ -1,7 +1,8 @@
 import unittest
 
+from demo_prompts import DEMO_PROMPTS
+
 from rag.nlp import Intent, detect_intent, detect_topic_selection
-from web_ui.streamlit_app import DEMO_PROMPTS
 
 
 class NLPDetectionTests(unittest.TestCase):
@@ -26,6 +27,15 @@ class NLPDetectionTests(unittest.TestCase):
             Intent.WORK,
         )
 
+    def test_payday_follow_up_accepts_plural_and_spaced_forms(self) -> None:
+        for question in (
+            "When is payday?",
+            "How many paydays are there each month?",
+            "How many pay days are there each month?",
+        ):
+            with self.subTest(question=question):
+                self.assertEqual(detect_intent(question), Intent.WORK)
+
     def test_late_absence_question_is_work_intent(self) -> None:
         self.assertEqual(
             detect_intent("How should I report being late or unexpectedly absent?"),
@@ -34,6 +44,16 @@ class NLPDetectionTests(unittest.TestCase):
 
     def test_small_talk_is_not_promoted_to_work(self) -> None:
         self.assertEqual(detect_intent("hello"), Intent.SMALL_TALK)
+
+    def test_greeting_does_not_hide_a_work_question(self) -> None:
+        for greeting in ("Hello,", "Hi!", "Hey there.", "Good morning,"):
+            with self.subTest(greeting=greeting):
+                self.assertEqual(
+                    detect_intent(f"{greeting} How often are salaries paid?"), Intent.WORK
+                )
+
+    def test_greeting_does_not_turn_an_unknown_question_into_small_talk(self) -> None:
+        self.assertEqual(detect_intent("Hello, when does the money land?"), Intent.INVALID)
 
     def test_supported_demo_prompts_are_never_routed_as_invalid(self) -> None:
         unsupported = {

@@ -1,0 +1,5 @@
+/* The adjacent accessible clear button replaces the browser's second clear icon. */
+.conversation-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}

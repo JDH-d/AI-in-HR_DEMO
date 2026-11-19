@@ -3,8 +3,8 @@ import shutil
 import unittest
 from pathlib import Path
 
-from services.document_reader import load_documents
-from services.document_service import DocumentService
+from storage.document_reader import load_documents
+from storage.document_store import DocumentStore
 
 
 class DocumentReaderTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class DocumentReaderTests(unittest.TestCase):
         self.assertEqual(len(docs), 1)
         self.assertEqual(docs[0]["source"], "first.md")
 
-    def test_document_service_reports_index_health(self) -> None:
+    def test_document_store_reports_index_health(self) -> None:
         (self.temp_dir / "Policy.md").write_text("Policy content.", encoding="utf-8")
         index_path = self.temp_dir / "index.json"
         index_path.write_text(
@@ -83,7 +83,7 @@ class DocumentReaderTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        service = DocumentService(
+        service = DocumentStore(
             self.temp_dir,
             index_path=index_path,
             index_status_path=self.temp_dir / "index_status.json",

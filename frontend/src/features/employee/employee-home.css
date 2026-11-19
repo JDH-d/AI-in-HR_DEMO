@@ -1,0 +1,45 @@
+.employee-home { display: flex; flex-direction: column; gap: 1.25rem; max-width: 1380px; }
+.employee-summary-item, .employee-request-link, .employee-chat-link, .employee-text-link, .employee-secondary-link {
+  touch-action: manipulation;
+  transition: background-color var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
+}
+.employee-update-bar, .employee-section-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.employee-update-bar > p { max-width: 42rem; line-height: 1.5; }
+.employee-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
+.employee-summary-item { display: grid; min-width: 0; gap: .25rem; padding: 1rem; border: 1px solid var(--color-line); border-radius: .5rem; background: var(--color-panel); overflow-wrap: anywhere; }
+.employee-summary-item:hover { background: var(--color-raised); }
+.employee-summary-item > span { font-size: .875rem; font-weight: 600; }
+.employee-summary-item strong { font-size: 1.75rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.employee-summary-item small { color: var(--color-muted); font-size: .75rem; line-height: 1.5; }
+.employee-home-grid { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr); align-items: start; gap: 1.25rem; }
+.employee-home-column { display: grid; min-width: 0; gap: 1.25rem; }
+.employee-task-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-line); }
+.employee-home-list { margin-top: .5rem; }
+.employee-home-list > * + * { border-top: 1px solid var(--color-line); }
+.employee-request-link { display: flex; min-width: 0; justify-content: space-between; align-items: center; gap: 1rem; padding: .85rem .25rem; border-radius: .25rem; }
+.employee-request-link:hover, .employee-chat-link:hover { background: var(--color-raised); }
+.employee-request-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin-top: .25rem; font-size: .875rem; line-height: 1.5; }
+.employee-request-trailing { display: grid; flex-shrink: 0; justify-items: end; gap: .5rem; }
+.employee-chat-link { display: grid; gap: .35rem; padding: .85rem .25rem; border-radius: .25rem; }
+.employee-chat-link strong { overflow-wrap: anywhere; font-size: .875rem; line-height: 1.5; }
+.employee-chat-link time { font-size: .75rem; color: var(--color-muted); }
+.employee-empty { padding-top: .75rem; font-size: .875rem; line-height: 1.6; color: var(--color-muted); }
+.employee-load-error { margin-top: .75rem; padding: .75rem; border: 1px solid var(--color-danger); border-radius: .5rem; font-size: .875rem; line-height: 1.5; }
+.employee-load-error > button { margin-top: .5rem; }
+.employee-text-link { display: inline-flex; min-height: 44px; align-items: center; padding: .25rem; border-radius: .25rem; color: var(--color-lime); font-size: .875rem; font-weight: 600; }
+.employee-text-link:hover { text-decoration: underline; }
+.employee-secondary-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: .5rem .75rem; border: 1px solid var(--color-control); border-radius: .375rem; font-size: .875rem; font-weight: 600; background: var(--color-panel); }
+.employee-secondary-link:hover { background: var(--color-raised); }
+@media (max-width: 1050px) { .employee-home-grid { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 480px) {
+  .employee-home { gap: 1rem; }
+  .employee-summary { gap: .4rem; }
+  .employee-summary-item { padding: .65rem .5rem; }
+  .employee-summary-item > span { font-size: .75rem; }
+  .employee-summary-item small { display: none; }
+  .employee-update-bar { flex-wrap: wrap; gap: .25rem; }
+  .employee-update-bar > button { margin-left: auto; }
+  .employee-request-link { flex-direction: column; align-items: stretch; gap: .5rem; }
+  .employee-request-trailing { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+  .employee-section-heading { flex-wrap: wrap; gap: 0; }
+}

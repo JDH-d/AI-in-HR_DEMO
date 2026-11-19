@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 
 from app import app
 from core import settings
-from workflow import WorkflowService
+from services.runtime import get_runtime
+from services.workflow_service import WorkflowService
 
 
 class WorkflowV1APITests(unittest.TestCase):
@@ -17,7 +18,7 @@ class WorkflowV1APITests(unittest.TestCase):
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.service = WorkflowService(str(self.temp_dir / "workflow.db"))
         self.client = TestClient(app)
-        self.workflow_patch = patch("api.v1_routes.workflow_service", self.service)
+        self.workflow_patch = patch.object(get_runtime(), "workflow_service", self.service)
         self.workflow_patch.start()
         self.employee_headers = self._headers("employee")
         self.manager_headers = self._headers("manager")
@@ -46,7 +47,7 @@ class WorkflowV1APITests(unittest.TestCase):
         sent_for_review = self.client.post(
             f"/api/v1/requests/{draft['id']}/submit",
             headers=self.employee_headers,
-            json={},
+            json={"expected_revision": draft["revision"]},
         )
         detail = self.client.get(
             f"/api/v1/requests/{draft['id']}",
@@ -59,11 +60,11 @@ class WorkflowV1APITests(unittest.TestCase):
         )
 
         self.assertEqual(sent_for_review.status_code, 200)
-        self.assertEqual(sent_for_review.json()["request"]["status"], "in_review")
+        self.assertEqual(sent_for_review.json()["request"]["status"], "submitted")
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(
             [event["to_status"] for event in detail.json()["events"]],
-            ["draft", "in_review"],
+            ["draft", "submitted"],
         )
         self.assertEqual(feedback.status_code, 201)
 
@@ -71,9 +72,14 @@ class WorkflowV1APITests(unittest.TestCase):
         request = self._review_request()
 
         approved = self.client.post(
-            f"/api/v1/requests/{request['id']}/approve",
+            f"/api/v1/requests/{request['id']}/actions/approve",
             headers=self.manager_headers,
-            json={"comment": "Dates approved"},
+            json={
+                "comment": "Dates approved",
+                "basis": "Leave policy",
+                "fair_review_confirmed": True,
+                "expected_revision": request["revision"],
+            },
         )
         detail = self.client.get(
             f"/api/v1/requests/{request['id']}",
@@ -84,26 +90,31 @@ class WorkflowV1APITests(unittest.TestCase):
         self.assertEqual(approved.json()["request"]["status"], "approved")
         self.assertEqual(
             [event["to_status"] for event in detail.json()["events"]],
-            ["draft", "in_review", "approved"],
+            ["draft", "submitted", "in_review", "approved"],
         )
 
     def test_manager_can_decline_and_employee_cannot_decide(self) -> None:
         request = self._review_request()
 
         forbidden = self.client.post(
-            f"/api/v1/requests/{request['id']}/approve",
+            f"/api/v1/requests/{request['id']}/actions/approve",
             headers=self.employee_headers,
-            json={},
+            json={"expected_revision": request["revision"]},
         )
         declined = self.client.post(
-            f"/api/v1/requests/{request['id']}/decline",
+            f"/api/v1/requests/{request['id']}/actions/reject",
             headers=self.manager_headers,
-            json={"comment": "Coverage unavailable"},
+            json={
+                "comment": "Coverage unavailable",
+                "basis": "Coverage rules",
+                "fair_review_confirmed": True,
+                "expected_revision": request["revision"],
+            },
         )
 
         self.assertEqual(forbidden.status_code, 403)
         self.assertEqual(declined.status_code, 200)
-        self.assertEqual(declined.json()["request"]["status"], "declined")
+        self.assertEqual(declined.json()["request"]["status"], "rejected")
         manager_detail = self.client.get(
             f"/api/v1/requests/{request['id']}",
             headers=self.manager_headers,
@@ -124,9 +135,9 @@ class WorkflowV1APITests(unittest.TestCase):
     def test_decline_requires_manager_comment(self) -> None:
         request = self._review_request()
         response = self.client.post(
-            f"/api/v1/requests/{request['id']}/decline",
+            f"/api/v1/requests/{request['id']}/actions/reject",
             headers=self.manager_headers,
-            json={"comment": ""},
+            json={"comment": "", "expected_revision": request["revision"]},
         )
         self.assertEqual(response.status_code, 422)
 
@@ -142,9 +153,9 @@ class WorkflowV1APITests(unittest.TestCase):
         request = self._review_request()
 
         cancelled = self.client.post(
-            f"/api/v1/requests/{request['id']}/cancel",
+            f"/api/v1/requests/{request['id']}/actions/cancel",
             headers=self.employee_headers,
-            json={"comment": "Plans changed"},
+            json={"comment": "Plans changed", "expected_revision": request["revision"]},
         )
 
         self.assertEqual(cancelled.status_code, 200)
@@ -215,7 +226,10 @@ class WorkflowV1APITests(unittest.TestCase):
             applicant="employee.demo",
             approver="manager.demo",
         )
-        return self.service.confirm_draft(draft["id"], "employee.demo", {})
+        submitted = self.service.confirm_draft(draft["id"], "employee.demo", {})
+        return self.service.act(
+            draft["id"], "manager.demo", "manager", "start_review", submitted["revision"]
+        )
 
     def _headers(self, username: str) -> dict:
         response = self.client.post(

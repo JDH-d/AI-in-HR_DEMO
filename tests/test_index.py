@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rag import index
-from services.document_reader import load_documents
+from storage.document_reader import load_documents
 
 
 class IndexTests(unittest.TestCase):

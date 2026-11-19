@@ -4,6 +4,7 @@ python_files = ["test_*.py"]
 addopts = "-ra"
 
 [tool.ruff]
+extend-exclude = [".tmp*"]
 target-version = "py310"
 line-length = 100
 

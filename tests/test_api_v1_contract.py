@@ -7,11 +7,12 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from api.schemas import ChatResponse, Message
-from api.v1_routes import _unanswered_entries
 from app import app
 from core import settings
-from services.ai_settings_service import AISettingsService
-from services.document_service import DocumentService
+from services.quality_service import unanswered_entries
+from services.runtime import get_runtime
+from storage.ai_settings_store import AISettingsStore
+from storage.document_store import DocumentStore
 
 
 class APIV1ContractTests(unittest.TestCase):
@@ -20,9 +21,9 @@ class APIV1ContractTests(unittest.TestCase):
 
     def test_expected_routes_are_exposed(self) -> None:
         routes = {
-            (method, route.path)
-            for route in app.routes
-            for method in getattr(route, "methods", set())
+            (method.upper(), path)
+            for path, operations in self.client.get("/openapi.json").json()["paths"].items()
+            for method in operations
         }
         expected = {
             ("POST", "/api/v1/chat"),
@@ -32,8 +33,8 @@ class APIV1ContractTests(unittest.TestCase):
             ("POST", "/api/v1/requests"),
             ("GET", "/api/v1/requests/{request_id}"),
             ("POST", "/api/v1/requests/{request_id}/submit"),
-            ("POST", "/api/v1/requests/{request_id}/approve"),
-            ("POST", "/api/v1/requests/{request_id}/decline"),
+            ("POST", "/api/v1/requests/{request_id}/actions/{action}"),
+            ("PATCH", "/api/v1/requests/{request_id}"),
             ("GET", "/api/v1/documents"),
             ("POST", "/api/v1/documents"),
             ("GET", "/api/v1/documents/{document_id}/download"),
@@ -105,9 +106,9 @@ class APIV1ContractTests(unittest.TestCase):
         shutil.rmtree(temp_dir, ignore_errors=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
         (temp_dir / "Policy.md").write_text("# Policy\n\nDemo content.", encoding="utf-8")
-        service = DocumentService(temp_dir)
+        service = DocumentStore(temp_dir)
         try:
-            with patch("api.v1_routes.document_service", service):
+            with patch.object(get_runtime().document_service, "store", service):
                 employee = self.client.get(
                     "/api/v1/documents",
                     headers=self._headers("employee"),
@@ -127,7 +128,7 @@ class APIV1ContractTests(unittest.TestCase):
         temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName
         shutil.rmtree(temp_dir, ignore_errors=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
-        service = DocumentService(
+        service = DocumentStore(
             temp_dir,
             index_path=temp_dir / "index.json",
             index_status_path=temp_dir / "index_status.json",
@@ -135,8 +136,8 @@ class APIV1ContractTests(unittest.TestCase):
         content = b"# Remote Work\n\nEmployees may work remotely two days per week."
         try:
             with (
-                patch("api.v1_routes.document_service", service),
-                patch("api.v1_routes.rebuild_index") as rebuild,
+                patch.object(get_runtime().document_service, "store", service),
+                patch.object(get_runtime().document_service, "rebuild") as rebuild,
             ):
                 uploaded = self.client.post(
                     "/api/v1/documents",
@@ -174,19 +175,20 @@ class APIV1ContractTests(unittest.TestCase):
         temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName
         shutil.rmtree(temp_dir, ignore_errors=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
-        service = DocumentService(
+        service = DocumentStore(
             temp_dir,
             index_path=temp_dir / "index.json",
             index_status_path=temp_dir / "index_status.json",
         )
         try:
             with (
-                patch("api.v1_routes.document_service", service),
-                patch(
-                    "api.v1_routes.ai_settings_service.get",
+                patch.object(get_runtime().document_service, "store", service),
+                patch.object(
+                    get_runtime().document_service.settings,
+                    "get",
                     return_value={"auto_index_uploads": False},
                 ),
-                patch("api.v1_routes.rebuild_index") as rebuild,
+                patch.object(get_runtime().document_service, "rebuild") as rebuild,
             ):
                 response = self.client.post(
                     "/api/v1/documents",
@@ -203,7 +205,7 @@ class APIV1ContractTests(unittest.TestCase):
     def test_ai_settings_preview_uses_unsaved_values_without_side_effects(self) -> None:
         temp_dir = Path.cwd() / ".tmp_tests" / self._testMethodName
         shutil.rmtree(temp_dir, ignore_errors=True)
-        service = AISettingsService(temp_dir / "ai_settings.json")
+        service = AISettingsStore(temp_dir / "ai_settings.json")
         prompt_state = {"value": "Saved prompt"}
         payload = {
             "settings": {
@@ -224,17 +226,19 @@ class APIV1ContractTests(unittest.TestCase):
         )
         try:
             with (
-                patch("api.v1_routes.ai_settings_service", service),
-                patch(
-                    "api.v1_routes.load_system_prompt",
+                patch.object(get_runtime().ai_settings_service, "settings", service),
+                patch.object(
+                    get_runtime().ai_settings_service.prompts,
+                    "get",
                     side_effect=lambda: prompt_state["value"],
                 ),
-                patch(
-                    "api.v1_routes.save_system_prompt",
+                patch.object(
+                    get_runtime().ai_settings_service.prompts,
+                    "save",
                     side_effect=lambda value: prompt_state.update(value=value),
                 ),
                 patch(
-                    "api.v1_routes.chat_service.handle_chat",
+                    "api.v1_routes.handle_chat",
                     return_value=preview_response,
                 ) as handle_chat,
             ):
@@ -316,8 +320,8 @@ class APIV1ContractTests(unittest.TestCase):
             },
         ]
 
-        active = _unanswered_entries(logs)
-        reviewed = _unanswered_entries(logs, {active[0]["id"]})
+        active = unanswered_entries(logs)
+        reviewed = unanswered_entries(logs, {active[0]["id"]})
 
         self.assertEqual(
             [item["question"] for item in active], ["What is the relocation allowance?"]

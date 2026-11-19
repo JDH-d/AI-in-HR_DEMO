@@ -2,13 +2,24 @@ export type Role = "employee" | "manager" | "knowledge_admin";
 export type User = { id: string; username: string; display_name: string; role: Role; manager_id?: string | null };
 export type Source = { source: string; title: string; section: string; category: string; version: string; excerpt: string; score: number };
 export type WorkflowRequest = {
+  number: number; title: string; priority: string; revision: number; review_round: number;
   id: string; type: "pto" | "sick_leave" | "document"; type_label: string;
   start_date: string | null; end_date: string | null; duration_days: number | null;
   comment: string; applicant: string; approver: string; status: string;
   created_at: string; updated_at: string; validation_errors?: string[];
+  manager_attention?: { due_at: string | null; overdue: boolean; reasons: string[] };
 };
-export type RequestDetail = { request: WorkflowRequest; events: RequestEvent[]; comments: RequestComment[] };
+export type RequestDetail = { request: WorkflowRequest; events: RequestEvent[]; comments: RequestComment[]; attachments: RequestAttachment[]; allowed_actions: string[]; procedure: string; policy_version: string };
+export type RequestAttachment = { id: string; filename: string; content_type: string; size: number; sha256: string; author: string; created_at: string };
+export type RequestList = { requests: WorkflowRequest[]; total: number; counts: Record<string, number> };
+export type RequestOptions = { categories: Record<string, string>; priorities: string[]; statuses: string[]; procedure: string; policy_version: string; managers: { id: string; display_name: string }[] };
 export type RequestEvent = { id: string; event_type: string; from_status: string | null; to_status: string | null; actor: string; details: Record<string, unknown>; created_at: string };
+export type ManagerOverview = {
+  summary: { new: number; in_review: number; waiting_for_employee: number; awaiting_completion: number; overdue: number; needs_attention: number; completed_last_30_days: number };
+  policy: { review_days: number; description: string };
+};
+export type ManagerActivity = { events: (RequestEvent & { request_id: string; request_number: number; request_title: string })[]; total: number };
+export type BulkReviewResult = { results: { id: string; success: boolean; request?: WorkflowRequest; error?: string }[] };
 export type RequestComment = { id: string; author: string; body: string; created_at: string };
 export type DocumentItem = { id: string; name: string; title: string; category: string; version: string; size: number; modified: string; index_status: string; chunk_count: number; indexed_at: string | null; index_error: string | null };
 export type FeedbackItem = { id: string; rating: number; sentiment: "positive" | "negative"; question: string; answer: string; comment: string; created_at: string };
@@ -24,4 +35,7 @@ export type AISettings = {
 export type AISettingsResponse = { settings: AISettings; system_prompt: string; default_system_prompt: string };
 export type AISettingsTestResult = { answer: string; intent: string; sources: Source[]; latency_ms: number };
 export type Metrics = { questions: number; grounded_answer_rate: number; unanswered_questions: number; positive_feedback_rate: number; requests_created: number; requests_approved: number; [key: string]: unknown };
-export type ChatMessage = { id: string; role: "user" | "assistant"; content: string; sources?: Source[]; workflow?: WorkflowRequest | null; streaming?: boolean; question?: string };
+export type ChatMessage = { id: string; role: "user" | "assistant"; content: string; sources?: Source[]; workflow?: WorkflowRequest | null; streaming?: boolean; question?: string; created_at?: string; turn_id?: string; sender_id?: string | null; status?: "complete" | "pending" | "failed" };
+export type Conversation = { id: string; owner_id: string; title: string; created_at: string; updated_at: string };
+export type ConversationDetail = { conversation: Conversation; messages: ChatMessage[] };
+export type ConversationList = { conversations: Conversation[]; has_more: boolean };

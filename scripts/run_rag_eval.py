@@ -7,7 +7,7 @@ from typing import Any
 
 from rag.index import build_index_items
 from rag.retriever import Retriever
-from services.document_reader import load_documents
+from storage.document_reader import load_documents
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = ROOT / "evals" / "rag_questions.json"

@@ -30,17 +30,6 @@ def chunk_document(
     return chunks
 
 
-def chunk_text(text: str, max_words: int = 220, overlap_words: int = 35) -> list[str]:
-    return [
-        item["text"]
-        for item in chunk_document(
-            text,
-            max_words=max_words,
-            overlap_words=overlap_words,
-        )
-    ]
-
-
 def _split_sections(text: str) -> list[tuple[str, str]]:
     sections: list[tuple[str, str]] = []
     current_section = "Document overview"

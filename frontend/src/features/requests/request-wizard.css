@@ -1,0 +1,18 @@
+.request-wizard-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; padding: 0 0 16px; margin: 0; list-style: none; border-bottom: 1px solid var(--color-line); }
+.request-wizard-steps li { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--color-muted); font-size: 12px; }
+.request-wizard-steps li > span { display: grid; place-items: center; width: 24px; height: 24px; flex-shrink: 0; border: 1px solid var(--color-line); border-radius: 50%; transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast); }
+.request-wizard-steps li[aria-current="step"] { color: var(--color-cream); font-weight: 600; }
+.request-wizard-steps li[aria-current="step"] > span { color: var(--color-on-accent); background: var(--color-accent); border-color: var(--color-accent); }
+.request-wizard-footer { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; }
+.request-wizard-footer > :first-child { margin-right: auto; }
+.request-wizard-recipient { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; border-top: 1px solid var(--color-line); padding-top: 12px; font-size: 12px; }
+.request-wizard-recipient > span, .request-wizard-recipient > p { color: var(--color-muted); }
+.request-wizard-recipient > strong { overflow-wrap: anywhere; }
+.request-wizard-recipient > p { flex-basis: 100%; line-height: 1.5; }
+.request-wizard-review { border: 1px solid var(--color-line); border-radius: 8px; padding: 12px; font-size: 14px; }
+.request-wizard-review > div { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.request-wizard-review dl { display: grid; gap: 12px; margin-top: 8px; }
+.request-wizard-review dt { font-size: 12px; color: var(--color-muted); }
+.request-wizard-review dd { margin-top: 3px; line-height: 1.5; overflow-wrap: anywhere; }
+.request-wizard-receipt { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-block: 8px; }
+@media (max-width: 359px) { .request-wizard-steps { gap: 4px; } .request-wizard-steps li { gap: 4px; } .request-wizard-footer { gap: 4px; } .request-wizard-footer > button { padding-inline: 8px; } }

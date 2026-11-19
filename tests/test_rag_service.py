@@ -3,16 +3,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from domain.chat import ChatQuery, ChatTurn, RoutingDecision
+from integrations.llm_service import LLMServiceError
 from rag.nlp import Intent
 from services.chat_fallbacks import ChatFallbackPolicy
-from services.chat_models import ChatQuery, ChatTurn, RoutingDecision
-from services.document_service import DocumentService
-from services.llm_service import LLMServiceError
 from services.rag_service import RAGService
 
 
 class FailingLLM:
-    def generate(self, prompt_messages: list[dict]) -> str:
+    def generate(self, prompt_messages: list[dict], **kwargs) -> str:
         raise LLMServiceError("LLM unavailable")
 
 
@@ -20,7 +19,7 @@ class RecordingLLM:
     def __init__(self) -> None:
         self.messages: list[dict] = []
 
-    def generate(self, prompt_messages: list[dict]) -> str:
+    def generate(self, prompt_messages: list[dict], **kwargs) -> str:
         self.messages = prompt_messages
         return "General guidance only; confirm the company-specific rule with HR."
 
@@ -32,7 +31,6 @@ class RAGServiceTests(unittest.TestCase):
         (self.temp_dir / "documents").mkdir(parents=True, exist_ok=True)
         self.rag_service = RAGService(
             llm_service=FailingLLM(),
-            document_service=DocumentService(self.temp_dir / "documents"),
             fallback_policy=ChatFallbackPolicy(),
         )
 
@@ -116,7 +114,6 @@ class RAGServiceTests(unittest.TestCase):
         llm = RecordingLLM()
         service = RAGService(
             llm_service=llm,
-            document_service=DocumentService(self.temp_dir / "documents"),
             fallback_policy=ChatFallbackPolicy(),
             index_ensurer=lambda: None,
             retriever_provider=lambda: Mock(query=Mock(return_value=[])),

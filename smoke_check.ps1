@@ -1,20 +1,25 @@
+param([switch]$SkipChecks)
+
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$tmpDir = Join-Path $root ".tmp_smoke"
+. (Join-Path $root "scripts/demo_processes.ps1")
+$python = Join-Path $root ".venv/Scripts/python.exe"
+if (-not (Test-Path -LiteralPath $python)) { throw "Install requirements-dev.txt into .venv first." }
+$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("peopleflow-smoke-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $tmpDir | Out-Null
 $env:WORKFLOW_DB = Join-Path $tmpDir "workflow.db"
 $env:LOG_PATH = Join-Path $tmpDir "chat_logs.jsonl"
 $env:INDEX_PATH = Join-Path $tmpDir "index.json"
 $env:SYSTEM_PROMPT_PATH = Join-Path $tmpDir "system_prompt.txt"
-$env:DEMO_AUTH_SECRET = "stage-three-smoke-secret"
-$env:DEMO_LOGIN_PASSWORD = "smoke-demo-password"
+$env:DEMO_AUTH_SECRET = [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
+$env:DEMO_LOGIN_PASSWORD = [guid]::NewGuid().ToString("N")
+$env:OPENAI_API_KEY = ""
+$env:PYTHON_DOTENV_DISABLED = "1"
+$env:AI_SETTINGS_PATH = Join-Path $tmpDir "ai_settings.json"
+$env:INDEX_STATUS_PATH = Join-Path $tmpDir "index_status.json"
 $env:PYTHONUNBUFFERED = "1"
 $env:PYTHONDONTWRITEBYTECODE = "1"
-
-if (Test-Path $tmpDir) {
-    Remove-Item $tmpDir -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 
 function Get-DemoToken {
     param(
@@ -33,28 +38,32 @@ Push-Location $root
 $proc = $null
 
 try {
-    python -m pytest -q -p no:cacheprovider
+    if (-not $SkipChecks) {
+    & $python -m pytest -q -p no:cacheprovider
     if ($LASTEXITCODE -ne 0) {
         throw "Unit tests failed."
     }
 
-    python -m scripts.run_rag_eval
+    & $python -m scripts.run_rag_eval
     if ($LASTEXITCODE -ne 0) {
         throw "RAG evaluation failed."
     }
 
     Push-Location (Join-Path $root "frontend")
-    npm test
+    try {
+    npm.cmd test
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend tests failed."
     }
-    npm run build
+    npm.cmd run build
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend production build failed."
     }
-    Pop-Location
+    } finally { Pop-Location }
 
-    $proc = Start-Process -FilePath python -ArgumentList @("-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8011") -WorkingDirectory $root -PassThru -WindowStyle Hidden
+    }
+    Assert-DemoPortAvailable -Port 8011
+    $proc = Start-Process -FilePath $python -ArgumentList @("-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8011", "--no-proxy-headers") -WorkingDirectory $root -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $tmpDir "api.out.log") -RedirectStandardError (Join-Path $tmpDir "api.err.log")
     $baseUrl = "http://127.0.0.1:8011"
 
     $ready = $false
@@ -75,7 +84,7 @@ try {
 
     $unauthorized = $null
     try {
-        Invoke-WebRequest -Uri "$baseUrl/api/v1/me" -Method Get -TimeoutSec 10 | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/api/v1/me" -Method Get -TimeoutSec 10 | Out-Null
     } catch {
         $unauthorized = $_.Exception.Response.StatusCode.value__
     }
@@ -115,12 +124,14 @@ try {
     }
 
     $requestId = $workflow.workflow_request.id
-    $reviewRequest = Invoke-RestMethod -Uri "$baseUrl/api/v1/requests/$requestId/submit" -Method Post -ContentType "application/json" -Headers $employeeHeaders -Body "{}" -TimeoutSec 10
-    if ($reviewRequest.request.status -ne "in_review") {
+    $reviewRequest = Invoke-RestMethod -Uri "$baseUrl/api/v1/requests/$requestId/submit" -Method Post -ContentType "application/json" -Headers $employeeHeaders -Body (@{expected_revision = $workflow.workflow_request.revision} | ConvertTo-Json) -TimeoutSec 10
+    if ($reviewRequest.request.status -ne "submitted") {
         throw "Workflow submit route did not submit the draft."
     }
 
-    $approved = Invoke-RestMethod -Uri "$baseUrl/api/v1/requests/$requestId/approve" -Method Post -ContentType "application/json" -Headers $managerHeaders -Body '{"comment":"Smoke approval"}' -TimeoutSec 10
+    $review = Invoke-RestMethod -Uri "$baseUrl/api/v1/requests/$requestId/actions/start_review" -Method Post -ContentType "application/json" -Headers $managerHeaders -Body (@{expected_revision = $reviewRequest.request.revision} | ConvertTo-Json) -TimeoutSec 10
+    $decisionBody = @{expected_revision = $review.request.revision; comment = "Smoke approval"; basis = "Demo leave policy"; fair_review_confirmed = $true} | ConvertTo-Json
+    $approved = Invoke-RestMethod -Uri "$baseUrl/api/v1/requests/$requestId/actions/approve" -Method Post -ContentType "application/json" -Headers $managerHeaders -Body $decisionBody -TimeoutSec 10
     if ($approved.request.status -ne "approved") {
         throw "Manager approval route did not approve the request."
     }
@@ -138,10 +149,16 @@ try {
     Write-Output "Smoke check passed."
 } finally {
     if ($proc -and (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) {
-        Stop-Process -Id $proc.Id -Force
+        Stop-DemoProcess -Process $proc
     }
     Pop-Location
     if (Test-Path $tmpDir) {
-        Remove-Item $tmpDir -Recurse -Force
+        $resolvedSmoke = (Resolve-Path -LiteralPath $tmpDir).Path
+        $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+        if (-not $resolvedSmoke.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+            -not ([System.IO.Path]::GetFileName($resolvedSmoke)).StartsWith("peopleflow-smoke-")) {
+            throw "Unexpected smoke cleanup path."
+        }
+        Remove-Item -LiteralPath $resolvedSmoke -Recurse -Force
     }
 }

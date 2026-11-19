@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import json
 import logging
 import math
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
-from openai import OpenAI, OpenAIError
-
 from core import settings
-from services.openai_client import create_openai_client
+from integrations.embedding_service import EmbeddingError, EmbeddingService
+from rag.nlp import strip_greeting
+from storage.json_store import read_json
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +23,14 @@ class Retriever:
     def __init__(
         self,
         items: list[dict[str, Any]],
-        client_factory: Callable[[], OpenAI] | None = None,
+        embedding_provider: Callable[[list[str]], list[list[float]]] | None = None,
     ) -> None:
         self.items = items
-        self.client_factory = client_factory or create_openai_client
+        self.embedding_provider = embedding_provider or EmbeddingService().embed
 
     @classmethod
     def load(cls, path: str) -> "Retriever":
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
-            raise RetrieverError(f"Unable to load retrieval index: {type(exc).__name__}") from exc
-
+        payload = read_json(Path(path))
         if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
             raise RetrieverError("Retrieval index has an unsupported schema")
         return cls(payload["items"])
@@ -94,18 +89,67 @@ class Retriever:
         if not any(item.get("embedding") for item in self.items):
             return None
         try:
-            response = self.client_factory().embeddings.create(
-                model=settings.EMBEDDING_MODEL,
-                input=[text],
-            )
-            return response.data[0].embedding
-        except (IndexError, OpenAIError, OSError, TypeError, ValueError) as exc:
+            return self.embedding_provider([text])[0]
+        except (EmbeddingError, IndexError) as exc:
             logger.warning(
                 "Query embedding failed model=%s error=%s; using lexical retrieval",
                 settings.EMBEDDING_MODEL,
                 type(exc).__name__,
             )
             return None
+
+    def selection_candidates(self, text: str, limit: int = 160) -> list[dict[str, Any]]:
+        """Bounded section catalogue for semantic selection, without another embedding call.
+
+        Keep a bounded set of chunks per section. Larger libraries are shortlisted
+        lexically; the current demo's whole section catalogue fits within this bound.
+        """
+        ranked = sorted(self.items, key=lambda item: _lexical_similarity(text, item), reverse=True)
+        section_chunks: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for item in self.items:
+            key = (item.get("document_id") or item["source"], item.get("section", ""))
+            section_chunks.setdefault(key, []).append(item)
+        candidates = []
+        seen = set()
+        for item in ranked:
+            key = (item.get("document_id") or item["source"], item.get("section", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            section = item.get("section", "Document overview")
+            chunks = sorted(
+                section_chunks[key],
+                key=lambda chunk: _lexical_similarity(text, chunk),
+                reverse=True,
+            )[:4]
+            chunks.sort(key=lambda chunk: chunk["chunk_id"])
+            section_text = "\n\n".join(dict.fromkeys(chunk["text"] for chunk in chunks))[:8000]
+            candidates.append(
+                {
+                    **item,
+                    "title": item.get("title") or item["source"],
+                    "section": section,
+                    "category": item.get("category", "General"),
+                    "version": item.get("version", "unversioned"),
+                    "text": section_text,
+                    "excerpt": build_relevant_excerpt(f"{section}. {section_text}", text),
+                    "score": _lexical_similarity(text, item),
+                }
+            )
+            if len(candidates) >= limit:
+                break
+        return candidates
+
+    @staticmethod
+    def is_exact_question(text: str, results: list[dict[str, Any]]) -> bool:
+        def normalize(value: str) -> str:
+            return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+        question = normalize(strip_greeting(text))
+        return bool(question) and any(
+            "?" in result.get("section", "") and normalize(result["section"]) == question
+            for result in results
+        )
 
 
 def build_relevant_excerpt(text: str, query: str, max_chars: int = 360) -> str:

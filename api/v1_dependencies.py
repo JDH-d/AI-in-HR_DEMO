@@ -5,21 +5,19 @@ from collections.abc import Callable
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from services.auth_service import AuthenticationError, DemoIdentity
-from services.runtime import auth_service
+from services.auth_service import DemoIdentity
+from services.runtime import Runtime, get_runtime
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def current_identity(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    runtime: Runtime = Depends(get_runtime),
 ) -> DemoIdentity:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Bearer authentication is required.")
-    try:
-        return auth_service.verify_token(credentials.credentials)
-    except AuthenticationError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return runtime.auth_service.verify_token(credentials.credentials)
 
 
 def require_roles(*roles: str) -> Callable:

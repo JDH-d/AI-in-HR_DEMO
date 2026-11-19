@@ -1,16 +1,9 @@
 from __future__ import annotations
 
 import re
-from enum import Enum
 from typing import Optional
 
-
-class Intent(str, Enum):
-    WORK = "work"
-    SMALL_TALK = "small_talk"
-    CAPABILITIES = "view_capabilities"
-    INVALID = "invalid"
-
+from domain.chat import Intent
 
 SUPPORTED_TOPICS = [
     "PTO, vacation, and sick leave",
@@ -27,7 +20,9 @@ def detect_language(text: str) -> str:
 
 
 def detect_intent(text: str) -> Intent:
-    lowered = text.lower().strip()
+    lowered = strip_greeting(text).lower().strip()
+    if not lowered:
+        return Intent.SMALL_TALK if text.strip() else Intent.INVALID
     if detect_topic_selection(text):
         return Intent.WORK
     if _is_capabilities_query(lowered):
@@ -127,16 +122,22 @@ def _is_capabilities_query(text: str) -> bool:
 
 
 def _is_small_talk(text: str) -> bool:
-    patterns = [
-        r"^hi\b",
-        r"^hello\b",
-        r"^hey\b",
-        r"good (morning|afternoon|evening)",
-        r"how are you",
-        r"what's up",
-        r"how is it going",
-    ]
-    return any(re.search(pattern, text) for pattern in patterns)
+    return bool(re.fullmatch(r"(?:how are you|what's up|how is it going)[\s?!.]*", text))
+
+
+def strip_greeting(text: str) -> str:
+    """Remove a greeting prefix, preserving any substantive question after it."""
+    return re.sub(
+        r"^\s*(?:(?:hi|hello|hey)(?: there)?|good (?:morning|afternoon|evening))\b[\s,!.:;-]*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def contains_cyrillic(text: str) -> bool:
+    # This application intentionally supports English questions only.
+    return bool(re.search(r"[\u0400-\u052f]", text))
 
 
 _WORK_PATTERNS = [
@@ -149,7 +150,7 @@ _WORK_PATTERNS = [
     r"\bsalar(?:y|ies)\b",
     r"\bpayroll\b",
     r"\bpaycheck\b",
-    r"\bpay ?day\b",
+    r"\bpay ?days?\b",
     r"\bpay frequency\b",
     r"\bdirect deposit\b",
     r"\bmy pay\b",
@@ -195,3 +196,43 @@ _WORK_PATTERNS = [
 
 def _is_work_related(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in _WORK_PATTERNS)
+
+
+def is_numeric_topic_choice(text: str) -> bool:
+    return bool(re.match(r"^\s*\d+\s*[).:\-]?\s*$", text or ""))
+
+
+def is_exact_topic_text(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    return any(cleaned == topic.lower() for topic in SUPPORTED_TOPICS)
+
+
+def extract_keywords(text: str) -> list[str]:
+    words = re.findall(r"[a-z0-9]+(?:[/-][a-z0-9]+)?", (text or "").lower())
+    stop = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "that",
+        "this",
+        "from",
+        "about",
+        "into",
+        "you",
+        "your",
+        "are",
+        "can",
+        "how",
+        "what",
+        "which",
+        "when",
+        "where",
+        "want",
+        "know",
+        "info",
+        "information",
+        "policy",
+        "policies",
+    }
+    return list(dict.fromkeys(word for word in words if word not in stop))

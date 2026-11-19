@@ -4,32 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from api.schemas import ChatRequest
-
 
 class LoginRequest(BaseModel):
     username: Literal["employee", "manager", "knowledge_admin"]
-    password: str = Field(..., min_length=1)
-
-
-class StructuredRequestCreate(BaseModel):
-    type: Literal["pto", "sick_leave", "document"]
-    start_date: str | None = None
-    end_date: str | None = None
-    comment: str = Field(..., min_length=1)
-    approver: str | None = None
-
-
-class RequestSubmit(BaseModel):
-    type: Literal["pto", "sick_leave", "document"] | None = None
-    start_date: str | None = None
-    end_date: str | None = None
-    comment: str | None = None
-    approver: str | None = None
-
-
-class DecisionRequest(BaseModel):
-    comment: str = ""
+    password: str = Field(..., min_length=1, max_length=1024)
 
 
 class FeedbackCreate(BaseModel):
@@ -76,7 +54,3 @@ class AISettingsTestRequest(AISettingsUpdate):
 
 class QualityReviewAction(BaseModel):
     action: Literal["resolved", "ignored"]
-
-
-class V1ChatRequest(ChatRequest):
-    pass

@@ -13,7 +13,7 @@ htmlcov/
 .streamlit/
 .demo_logs/
 .demo_state/
-.tmp*/
+.tmp*
 *.log
 data/*
 !data/.gitkeep

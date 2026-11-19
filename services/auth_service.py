@@ -58,7 +58,9 @@ class DemoAuthService:
 
     def login(self, username: str, password: str) -> tuple[str, DemoIdentity]:
         identity = DEMO_IDENTITIES.get((username or "").strip().lower())
-        password_valid = secrets.compare_digest(password or "", self.password)
+        password_valid = secrets.compare_digest(
+            (password or "").encode("utf-8"), self.password.encode("utf-8")
+        )
         if identity is None or not password_valid:
             raise AuthenticationError("Invalid demo credentials.")
         return self.issue_token(identity), identity
@@ -83,6 +85,8 @@ class DemoAuthService:
             encoded, provided_signature = token.split(".", 1)
         except ValueError as exc:
             raise AuthenticationError("Invalid authentication token.") from exc
+        if not token.isascii():
+            raise AuthenticationError("Invalid authentication token.")
         expected_signature = _base64url(
             hmac.new(self.secret, encoded.encode("ascii"), hashlib.sha256).digest()
         )

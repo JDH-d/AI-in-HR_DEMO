@@ -13,5 +13,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
+    // Bound worker memory while the demo, browsers and other tests are running.
+    maxWorkers: 1,
   },
 });
